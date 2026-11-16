@@ -34,7 +34,11 @@ test("配置帧带连接方式和刷新策略，USB 不是互斥模式", () => {
   assert.equal(frame.usbFallback, true);
   assert.equal(frame.pushGeneratingSec, 15);
   assert.equal(frame.pushIdleSec, 60);
-  assert.equal(frame.fullEveryN, 10);
+  assert.equal(frame.fullEveryN, 0);
+  assert.equal(frame.fullEveryMin, 0);
+  const missing = decodeFrame('{"v":1,"type":"config","seq":1}\n');
+  assert.equal(missing.fullEveryN, 0);
+  assert.equal(missing.fullEveryMin, 0);
   const decoded = decodeFrame(encodeFrame(frame));
   assert.deepEqual(decoded, frame);
   assert.equal(TCP_PORT, 7427);

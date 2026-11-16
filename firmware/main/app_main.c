@@ -29,8 +29,8 @@ static int content_seq;
 static int last_seq = -1;
 static char picture[192];
 static bool partial_on_change = true;
-static int full_every_n = 10;
-static int full_every_min = 10;
+static int full_every_n = 0;
+static int full_every_min = 0;
 static bool bluetooth;
 
 static void buttons_init(void) {
@@ -51,6 +51,23 @@ static int pressed(int pin, int *held) {
     }
     if (!down) *held = 0;
     return 0;
+}
+
+static void note_refresh_label(void) {
+    if (!partial_on_change) {
+        if (full_every_min > 0) snprintf(status_view.refresh, sizeof status_view.refresh, "完整 · 每 %d 分钟", full_every_min);
+        else snprintf(status_view.refresh, sizeof status_view.refresh, "完整");
+        return;
+    }
+    if (full_every_n > 0) {
+        snprintf(status_view.refresh, sizeof status_view.refresh, "局部 · 每 %d 次", full_every_n);
+        return;
+    }
+    if (full_every_min > 0) {
+        snprintf(status_view.refresh, sizeof status_view.refresh, "局部 · 每 %d 分钟", full_every_min);
+        return;
+    }
+    snprintf(status_view.refresh, sizeof status_view.refresh, "局部");
 }
 
 static int pending_count(void) {
@@ -84,8 +101,7 @@ static void apply_line(const char *line) {
         if (cJSON_IsNumber(n)) full_every_n = n->valueint;
         if (cJSON_IsNumber(m)) full_every_min = m->valueint;
         snprintf(status_view.link, sizeof status_view.link, "%s", bluetooth ? "蓝牙" : "Wi-Fi");
-        if (partial_on_change) snprintf(status_view.refresh, sizeof status_view.refresh, "局部 · 每 %d 次", full_every_n);
-        else snprintf(status_view.refresh, sizeof status_view.refresh, "完整 · 每 %d 分钟", full_every_min);
+        note_refresh_label();
         mote_link_apply_radios(bluetooth);
         snprintf(status_view.eink, sizeof status_view.eink, "已连接");
     } else if (strcmp(type->valuestring, "wifi") == 0) {
@@ -207,7 +223,7 @@ void app_main(void) {
     snprintf(status_view.speed, sizeof status_view.speed, "未连接");
     snprintf(status_view.hook, sizeof status_view.hook, "未安装");
     snprintf(status_view.link, sizeof status_view.link, "Wi-Fi");
-    snprintf(status_view.refresh, sizeof status_view.refresh, "局部 · 每 10 次");
+    note_refresh_label();
     snprintf(status_view.clock, sizeof status_view.clock, "--:--");
     buttons_init();
     epd_init();

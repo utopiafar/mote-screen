@@ -86,8 +86,8 @@ function normalizeConfig(raw) {
     pushGeneratingSec: finiteNumber(raw.pushGeneratingSec, 15),
     pushIdleSec: finiteNumber(raw.pushIdleSec, 60),
     partialOnChange: raw.partialOnChange !== false,
-    fullEveryN: finiteNumber(raw.fullEveryN, 10),
-    fullEveryMin: finiteNumber(raw.fullEveryMin, 10),
+    fullEveryN: finiteNumber(raw.fullEveryN, 0),
+    fullEveryMin: finiteNumber(raw.fullEveryMin, 0),
   };
 }
 

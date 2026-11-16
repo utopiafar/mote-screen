@@ -8,8 +8,8 @@
 export const LINKS = Object.freeze(["wifi", "bluetooth"]);
 
 export const PUSH_CHOICES_SEC = Object.freeze([5, 15, 30, 60, 300]);
-export const FULL_EVERY_N_CHOICES = Object.freeze([5, 10, 20]);
-export const FULL_EVERY_MIN_CHOICES = Object.freeze([5, 10, 30]);
+export const FULL_EVERY_N_CHOICES = Object.freeze([0, 5, 10, 20]);
+export const FULL_EVERY_MIN_CHOICES = Object.freeze([0, 5, 10, 30]);
 
 export const PRESETS = Object.freeze({
   saver: Object.freeze({
@@ -18,8 +18,8 @@ export const PRESETS = Object.freeze({
     pushGeneratingSec: 60,
     pushIdleSec: 300,
     partialOnChange: true,
-    fullEveryN: 20,
-    fullEveryMin: 30,
+    fullEveryN: 0,
+    fullEveryMin: 0,
   }),
   balanced: Object.freeze({
     id: "balanced",
@@ -27,8 +27,8 @@ export const PRESETS = Object.freeze({
     pushGeneratingSec: 15,
     pushIdleSec: 60,
     partialOnChange: true,
-    fullEveryN: 10,
-    fullEveryMin: 10,
+    fullEveryN: 0,
+    fullEveryMin: 0,
   }),
   timely: Object.freeze({
     id: "timely",
@@ -36,10 +36,25 @@ export const PRESETS = Object.freeze({
     pushGeneratingSec: 5,
     pushIdleSec: 15,
     partialOnChange: true,
-    fullEveryN: 5,
-    fullEveryMin: 5,
+    fullEveryN: 0,
+    fullEveryMin: 0,
   }),
 });
+
+/* Pairs shipped as the 省电 / 均衡 / 及时 refresh defaults before cleanup was opt-in.
+ * Mac calls this once, when the stored state has no refreshCleanupMigrated flag.
+ * A later choice of the same numbers stays. */
+const LEGACY_CLEANUP_PAIRS = Object.freeze([
+  Object.freeze([5, 5]),
+  Object.freeze([10, 10]),
+  Object.freeze([20, 30]),
+]);
+
+export function migrateLegacyCleanup(settings) {
+  const legacy = LEGACY_CLEANUP_PAIRS.some(([n, minutes]) => settings.fullEveryN === n && settings.fullEveryMin === minutes);
+  if (!legacy) return settings;
+  return { ...settings, fullEveryN: 0, fullEveryMin: 0 };
+}
 
 const PRESET_LIST = Object.values(PRESETS);
 
@@ -130,12 +145,13 @@ export function msUntilPush({ settings, phase, inboxDirty, lastPushMs, nowMs }) 
  * Panel policy. "full" is the occasional 1-bit base refresh and may flash.
  * A page change stays "partial": the non-flashing update that keeps the previous frame as its base.
  * partialOnChange does not cover page changes. It only applies to later updates on the same page.
- * A due count or timer still requests "full", including when it lands on a page change.
+ * fullEveryN and fullEveryMin are off at 0. A positive count or timer still requests "full",
+ * including when it lands on a page change.
  * A due timer refreshes even when the picture has not changed.
  */
 export function decideRefresh({ policy, contentChanged, viewChanged, partialsSinceFull, msSinceFull }) {
   const timeDue = policy.fullEveryMin > 0 && msSinceFull >= policy.fullEveryMin * 60 * 1000;
-  const countDue = partialsSinceFull >= policy.fullEveryN;
+  const countDue = policy.fullEveryN > 0 && partialsSinceFull >= policy.fullEveryN;
   if (viewChanged) {
     if (timeDue || countDue) return "full";
     return "partial";
@@ -158,8 +174,12 @@ export function linkLabel(link) {
 }
 
 export function refreshSummary(settings) {
-  if (!settings.partialOnChange) return `完整 · 每 ${settings.fullEveryMin} 分钟`;
-  return `局部 · 每 ${settings.fullEveryN} 次`;
+  if (!settings.partialOnChange) {
+    return settings.fullEveryMin > 0 ? `完整 · 每 ${settings.fullEveryMin} 分钟` : "完整";
+  }
+  if (settings.fullEveryN > 0) return `局部 · 每 ${settings.fullEveryN} 次`;
+  if (settings.fullEveryMin > 0) return `局部 · 每 ${settings.fullEveryMin} 分钟`;
+  return "局部";
 }
 
 /** Which pipe the Mac should write to right now. */

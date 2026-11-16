@@ -271,11 +271,11 @@ function paneEink() {
     <p class="footer-note">需要你批准，或一轮结束，会马上推过去，不等上面的间隔。</p>
     <div class="caption">墨水屏刷新</div>
     <div class="group">
-      <div class="grow"><div>有新内容时局部刷新<span class="help">换页，以及同一页上的数字和卡片，都走不闪的局部刷新。关掉之后，同一页的新画面改做基线刷新。换页不受这个开关影响。</span></div>${switchHtml(model.settings.partialOnChange, "partial")}</div>
-      <div class="grow"><span>完整刷新</span>${select("fullEveryN", model.settings.fullEveryN, FULL_EVERY_N_CHOICES, (n) => `每 ${n} 次局部刷新`)}</div>
-      <div class="grow"><span>或每隔</span>${select("fullEveryMin", model.settings.fullEveryMin, FULL_EVERY_MIN_CHOICES, (n) => `${n} 分钟`)}</div>
+      <div class="grow"><div>有新内容时局部刷新<span class="help">换页和同一页上的数字、卡片都走局部刷新。关掉之后，同一页的新画面改做基线刷新。换页不受这个开关影响。</span></div>${switchHtml(model.settings.partialOnChange, "partial")}</div>
+      <div class="grow"><span>每 N 次</span>${select("fullEveryN", model.settings.fullEveryN, FULL_EVERY_N_CHOICES, (n) => n === 0 ? "关闭" : `每 ${n} 次局部刷新`)}</div>
+      <div class="grow"><span>每隔</span>${select("fullEveryMin", model.settings.fullEveryMin, FULL_EVERY_MIN_CHOICES, (n) => n === 0 ? "关闭" : `${n} 分钟`)}</div>
     </div>
-    <p class="footer-note">换页不闪屏。基线刷新只在开机，以及每 N 次局部刷新或每隔几分钟清一次残影，这时可能会闪一下。局部更快、更省电。默认按均衡来，照顾 1200 mAh 的电池。</p>
+    <p class="footer-note">换页和日常更新走局部刷新；默认不再定时整屏闪。如残影积累，可在设置里打开偶尔的基线刷新（这时可能会闪一下）。</p>
     <div class="actions">
       <button class="btn" type="button" data-act="scan-wifi">扫描 Wi-Fi 设备</button>
       <button class="btn" type="button" data-act="scan-ble">扫描蓝牙设备</button>

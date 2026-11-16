@@ -275,7 +275,8 @@ final class AppModel: ObservableObject {
             "setupDone": setupDone,
             "loginItem": loginItem,
             "remembered": remembered.rawValue,
-            "settings": (try? JSONEncoder().encode(settings)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            "settings": (try? JSONEncoder().encode(settings)).flatMap { String(data: $0, encoding: .utf8) } ?? "",
+            "refreshCleanupMigrated": true
         ]
         UserDefaults.standard.set(payload, forKey: "mote-screen.state")
     }
@@ -287,9 +288,11 @@ final class AppModel: ObservableObject {
         if let raw = payload["remembered"] as? String, let memory = HookMemory(rawValue: raw) {
             remembered = memory
         }
+        let already = payload["refreshCleanupMigrated"] as? Bool ?? false
         if let json = payload["settings"] as? String, let data = json.data(using: .utf8),
            let stored = try? JSONDecoder().decode(ScreenSettings.self, from: data) {
-            settings = stored
+            settings = already ? stored : stored.migratingLegacyCleanup()
+            if !already { persist() }
         }
     }
 }

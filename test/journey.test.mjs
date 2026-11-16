@@ -35,7 +35,7 @@ test("接上屏之后是已连接；hook 失效优先；修好后恢复", () => 
   assert.equal(menuLabel(model), "已连接");
 });
 
-test("待处理立刻推送，速度要等间隔，十分钟后完整刷新", () => {
+test("待处理立刻推送，速度要等间隔，默认定时不整屏闪", () => {
   const model = createModel();
   connectSpeed(model);
   installHook(model);
@@ -54,10 +54,10 @@ test("待处理立刻推送，速度要等间隔，十分钟后完整刷新", ()
   advance(model, 1_000);
   assert.match(model.lastFrameText, /"type":"speed"/);
   advance(model, 600_000);
-  assert.equal(model.lastRefresh, "full");
+  assert.notEqual(model.lastRefresh, "full");
 });
 
-test("换页走局部刷新，开机和到点清残影仍走基线", () => {
+test("换页走局部刷新，默认定时不闪，打开分钟后才走基线", () => {
   const model = createModel();
   assert.equal(model.lastRefresh, "full");
   connectSpeed(model);
@@ -73,6 +73,9 @@ test("换页走局部刷新，开机和到点清残影仍走基线", () => {
   deviceInput(model, "boot");
   assert.equal(model.device.view, "home");
   assert.equal(model.lastRefresh, "partial");
+  advance(model, 600_000);
+  assert.notEqual(model.lastRefresh, "full");
+  patchSettings(model, { fullEveryMin: 10 });
   advance(model, 600_000);
   assert.equal(model.lastRefresh, "full");
 });

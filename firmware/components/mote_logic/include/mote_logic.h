@@ -47,7 +47,8 @@ const char *mote_menu_status(bool setup, bool speed, bool eink, const char *hook
 int mote_ms_until_push(int push_generating_sec, int push_idle_sec, const char *phase, bool inbox_dirty, int last_push_ms, int now_ms);
 /* view_changed is a page turn. That stays on the partial waveform.
  * partial_on_change only applies to later updates on the same page.
- * full is the occasional base cleanup (count or minutes), plus a forced first paint. */
+ * full_every_n and full_every_min are off at 0. A positive count or minute
+ * interval can still request the base waveform, plus a forced first paint. */
 mote_refresh_t mote_decide_refresh(bool partial_on_change, int full_every_n, int full_every_min, bool content_changed, int partials_since_full, int ms_since_full, bool view_changed);
 int mote_turn_on_data(mote_refresh_t kind);
 int mote_use_base(int force, mote_refresh_t kind);

@@ -23,7 +23,7 @@ Wi-Fi 是默认通道：设备在 TCP `7427` 上收，一行一个 JSON 对象�
 设置变化时，以及每次连上之后，Mac 推一份。设备用它决定无线电和刷新，不自己发明策略。
 
 ```json
-{"v":1,"type":"config","seq":1,"link":"wifi","usbFallback":true,"pushGeneratingSec":15,"pushIdleSec":60,"partialOnChange":true,"fullEveryN":10,"fullEveryMin":10}
+{"v":1,"type":"config","seq":1,"link":"wifi","usbFallback":true,"pushGeneratingSec":15,"pushIdleSec":60,"partialOnChange":true,"fullEveryN":0,"fullEveryMin":0}
 ```
 
 | 字段 | 含义 |
@@ -33,8 +33,8 @@ Wi-Fi 是默认通道：设备在 TCP `7427` 上收，一行一个 JSON 对象�
 | `pushGeneratingSec` | 生成中或调用工具时，速度帧的最小间隔。可选 5、15、30、60、300。 |
 | `pushIdleSec` | 空闲时的间隔，同一组可选值。 |
 | `partialOnChange` | 有新画面时先局部刷新。 |
-| `fullEveryN` | 累计这么多次局部刷新后，下一次改为基线刷新。 |
-| `fullEveryMin` | 距离上次基线刷新达到这么多分钟，也做一次基线刷新，用来清残影。 |
+| `fullEveryN` | 累计这么多次局部刷新后，下一次改为基线刷新。`0` 是关闭。可选 0、5、10、20。 |
+| `fullEveryMin` | 距离上次基线刷新达到这么多分钟，也做一次基线刷新。`0` 是关闭。可选 0、5、10、30。 |
 
 Codex 的 `PermissionRequest` 和 `Stop` 不看这两个间隔，收到就推 `inbox`。
 
@@ -82,8 +82,9 @@ Codex 的 `PermissionRequest` 和 `Stop` 不看这两个间隔，收到就推 `i
 
 - 开机第一幅：基线。同一帧 1-bit 画面写入 `0x24` 和 `0x26`，然后 `0x22=0xF7`、`0x20`。这一下可能会闪。
 - 主桌面、工作台、详情之间的换页：局部。只写 `0x24`，`0x22=0xFF`、`0x20`，不复位面板。`0x26` 留着上一幅，所以只动有变化的点。`partialOnChange` 管不到换页。
-- 还在同一页，画面没变，而且还没到基线的时间：不动。
-- 到了 `fullEveryMin`，或局部刷新已经做了 `fullEveryN` 次：下一次改为基线（`0xF7`）。关掉局部刷新时，同一页的新画面也走基线。换页仍然是局部，除非这次正好赶上次数或时间。
+- 还在同一页，画面没变，而且没有打开基线间隔：不动。
+- `fullEveryN` 和 `fullEveryMin` 默认是 `0`，不定时整屏闪。设成正数之后，到了次数或分钟，下一次改为基线（`0xF7`），这时可能会闪一下。换页仍然是局部，除非这次正好赶上已打开的次数或时间。
+- 关掉局部刷新时，同一页的新画面也走基线。
 - 同一页上的新数字、时钟或卡片文字：局部（`0xFF`）。
 
 基线和局部都是面板公开示例里的 1-bit 命令。4 灰阶（`0x1A=0x5A`、`0x22=0xD7`）不用于界面。下一次刷新要等 BUSY 脚空下来。不在这里新造控制器寄存器或 LUT。

@@ -57,6 +57,11 @@ static void refresh_cases(void) {
     expect_int("cleanup", mote_use_base(0, cleanup), 1);
     expect_int("cleanup-byte", mote_turn_on_data(cleanup), MOTE_TURN_BASE);
     expect_int("not-4gray", mote_turn_on_data(MOTE_REFRESH_FULL) == 0xD7 || mote_turn_on_data(page) == 0xD7, 0);
+    expect_int("n-off", mote_decide_refresh(true, 0, 0, true, 0, 0, false), MOTE_REFRESH_PARTIAL);
+    expect_int("n-zero-count", mote_decide_refresh(true, 0, 0, true, 100, 600000, false), MOTE_REFRESH_PARTIAL);
+    expect_int("min-off", mote_decide_refresh(true, 0, 0, false, 0, 600000, false), MOTE_REFRESH_NONE);
+    expect_int("page-min-off", mote_decide_refresh(true, 0, 0, false, 0, 600000, true), MOTE_REFRESH_PARTIAL);
+    expect_int("default-not-base", mote_use_base(0, mote_decide_refresh(true, 0, 0, true, 10, 600000, false)), 0);
 }
 
 static void pipe_cases(void) {

@@ -26,12 +26,12 @@ public struct ScreenSettings: Codable, Equatable {
     public var accessCode: String
 
     public static let pushChoices = [5, 15, 30, 60, 300]
-    public static let fullEveryNChoices = [5, 10, 20]
-    public static let fullEveryMinChoices = [5, 10, 30]
+    public static let fullEveryNChoices = [0, 5, 10, 20]
+    public static let fullEveryMinChoices = [0, 5, 10, 30]
 
-    public static let saver = ScreenSettings(link: .wifi, usbFallback: true, address: "", usbPort: "", pushGeneratingSec: 60, pushIdleSec: 300, partialOnChange: true, fullEveryN: 20, fullEveryMin: 30, accessCode: "")
-    public static let balanced = ScreenSettings(link: .wifi, usbFallback: true, address: "", usbPort: "", pushGeneratingSec: 15, pushIdleSec: 60, partialOnChange: true, fullEveryN: 10, fullEveryMin: 10, accessCode: "")
-    public static let timely = ScreenSettings(link: .wifi, usbFallback: true, address: "", usbPort: "", pushGeneratingSec: 5, pushIdleSec: 15, partialOnChange: true, fullEveryN: 5, fullEveryMin: 5, accessCode: "")
+    public static let saver = ScreenSettings(link: .wifi, usbFallback: true, address: "", usbPort: "", pushGeneratingSec: 60, pushIdleSec: 300, partialOnChange: true, fullEveryN: 0, fullEveryMin: 0, accessCode: "")
+    public static let balanced = ScreenSettings(link: .wifi, usbFallback: true, address: "", usbPort: "", pushGeneratingSec: 15, pushIdleSec: 60, partialOnChange: true, fullEveryN: 0, fullEveryMin: 0, accessCode: "")
+    public static let timely = ScreenSettings(link: .wifi, usbFallback: true, address: "", usbPort: "", pushGeneratingSec: 5, pushIdleSec: 15, partialOnChange: true, fullEveryN: 0, fullEveryMin: 0, accessCode: "")
 
     public static var `default`: ScreenSettings { .balanced }
 
@@ -71,8 +71,22 @@ public struct ScreenSettings: Codable, Equatable {
     }
 
     public var refreshSummary: String {
-        if !partialOnChange { return "完整 · 每 \(fullEveryMin) 分钟" }
-        return "局部 · 每 \(fullEveryN) 次"
+        if !partialOnChange {
+            return fullEveryMin > 0 ? "完整 · 每 \(fullEveryMin) 分钟" : "完整"
+        }
+        if fullEveryN > 0 { return "局部 · 每 \(fullEveryN) 次" }
+        if fullEveryMin > 0 { return "局部 · 每 \(fullEveryMin) 分钟" }
+        return "局部"
+    }
+
+    /// Old 省电 / 均衡 / 及时 refresh pairs. Call once, before the user can opt back in.
+    public func migratingLegacyCleanup() -> ScreenSettings {
+        let legacy = [(5, 5), (10, 10), (20, 30)]
+        guard legacy.contains(where: { $0.0 == fullEveryN && $0.1 == fullEveryMin }) else { return self }
+        var next = self
+        next.fullEveryN = 0
+        next.fullEveryMin = 0
+        return next
     }
 }
 
@@ -91,7 +105,7 @@ public enum RefreshKind: String {
 
 public func decideRefresh(partialOnChange: Bool, fullEveryN: Int, fullEveryMin: Int, contentChanged: Bool, partialsSinceFull: Int, msSinceFull: Int, viewChanged: Bool = false) -> RefreshKind {
     let timeDue = fullEveryMin > 0 && msSinceFull >= fullEveryMin * 60 * 1000
-    let countDue = partialsSinceFull >= fullEveryN
+    let countDue = fullEveryN > 0 && partialsSinceFull >= fullEveryN
     if viewChanged {
         if timeDue || countDue { return .full }
         return .partial

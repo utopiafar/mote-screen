@@ -166,17 +166,21 @@ struct SettingsView: View {
             Toggle("有新内容时局部刷新", isOn: Binding(get: { model.settings.partialOnChange }, set: { on in
                 model.updateSettings { $0.partialOnChange = on }
             }))
-            Picker("完整刷新", selection: Binding(get: { model.settings.fullEveryN }, set: { n in
+            Picker("每 N 次", selection: Binding(get: { model.settings.fullEveryN }, set: { n in
                 model.updateSettings { $0.fullEveryN = n }
             })) {
-                ForEach(ScreenSettings.fullEveryNChoices, id: \.self) { n in Text("每 \(n) 次局部刷新").tag(n) }
+                ForEach(ScreenSettings.fullEveryNChoices, id: \.self) { n in
+                    Text(n == 0 ? "关闭" : "每 \(n) 次局部刷新").tag(n)
+                }
             }
-            Picker("或每隔", selection: Binding(get: { model.settings.fullEveryMin }, set: { n in
+            Picker("每隔", selection: Binding(get: { model.settings.fullEveryMin }, set: { n in
                 model.updateSettings { $0.fullEveryMin = n }
             })) {
-                ForEach(ScreenSettings.fullEveryMinChoices, id: \.self) { n in Text("\(n) 分钟").tag(n) }
+                ForEach(ScreenSettings.fullEveryMinChoices, id: \.self) { n in
+                    Text(n == 0 ? "关闭" : "\(n) 分钟").tag(n)
+                }
             }
-            Text("换页不闪屏。基线刷新只在开机，以及每 N 次局部刷新或每隔几分钟清一次残影，这时可能会闪一下。局部更快、更省电。默认按均衡来，照顾 1200 mAh 的电池。")
+            Text("换页和日常更新走局部刷新；默认不再定时整屏闪。如残影积累，可在设置里打开偶尔的基线刷新（这时可能会闪一下）。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             HStack {
                 Button("扫描 Wi-Fi 设备") { model.scanWiFi() }
