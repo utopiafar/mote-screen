@@ -62,7 +62,7 @@ button, select { font: inherit; color: inherit; }
 .pip.ok { background: #1c1c1e; }
 .pip.err { background: #d12b2b; }
 
-.popover[hidden], .window[hidden], .wizard[hidden], .stagebar[hidden] { display: none !important; }
+[hidden] { display: none !important; }
 .popover {
   position: absolute; top: 36px; right: 72px; width: 280px;
   background: rgba(246,246,246,.96);

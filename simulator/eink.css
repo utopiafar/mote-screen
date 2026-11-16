@@ -82,7 +82,7 @@
   margin-left: 6px;
   vertical-align: 3px;
 }
-.badge[hidden], .empty[hidden] { display: none !important; }
+[hidden] { display: none !important; }
 
 /* Home desktop 2×2 */
 .desk {

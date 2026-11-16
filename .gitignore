@@ -10,3 +10,6 @@ firmware/dependencies.lock
 **/__pycache__/
 firmware/host/test_logic
 firmware/host/test_draw
+
+# Design prototypes stay out of this repo
+reference/
