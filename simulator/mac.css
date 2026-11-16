@@ -7,14 +7,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 button, select { font: inherit; color: inherit; }
-.lab {
+.workspace {
   display: grid;
   grid-template-columns: 600px minmax(760px, 1fr);
   min-height: 100vh;
   align-items: start;
 }
 @media (max-width: 1180px) {
-  .lab { grid-template-columns: 1fr; }
+  .workspace { grid-template-columns: 1fr; }
 }
 .device-col {
   padding: 28px 20px 88px;
@@ -200,7 +200,7 @@ button, select { font: inherit; color: inherit; }
   background: rgba(20,20,22,.78); color: #eee; border-radius: 8px;
   display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 8px;
 }
-.stagebar .lab { font-size: 11px; color: rgba(255,255,255,.62); padding: 0 6px; }
+.stagebar .stage-label { font-size: 11px; color: rgba(255,255,255,.62); padding: 0 6px; }
 .stagebar button {
   font-size: 11px; padding: 4px 8px; border-radius: 5px; border: 0;
   background: transparent; color: rgba(255,255,255,.88); cursor: pointer;

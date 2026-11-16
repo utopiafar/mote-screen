@@ -424,8 +424,8 @@ function renderBar() {
   const bar = document.getElementById("stagebar");
   bar.hidden = !chrome;
   const via = model.usbPlugged ? "拔出 USB" : "插入 USB";
-  bar.innerHTML = `<span class="lab">用户旅程</span>${STAGES.map(([id, name]) => `<button type="button" class="${model.step === id && (id !== "daily" || model.setupDone) ? "on" : ""}" data-load="${id}">${name}</button>`).join("")}
-    <span class="lab">屏</span>
+  bar.innerHTML = `<span class="stage-label">用户旅程</span>${STAGES.map(([id, name]) => `<button type="button" class="${model.step === id && (id !== "daily" || model.setupDone) ? "on" : ""}" data-load="${id}">${name}</button>`).join("")}
+    <span class="stage-label">屏</span>
     <button type="button" data-act="inject-permission">等待批准</button>
     <button type="button" data-act="inject-stop">本轮结束</button>
     <button type="button" data-act="inject-clear">清空</button>
