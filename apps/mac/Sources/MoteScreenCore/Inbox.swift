@@ -1,6 +1,20 @@
 import Foundation
 
 public enum InboxSummary {
+    /// Codex stdin (`hook_event_name`) or the summary the installed script POSTs (`kind` + `title`).
+    public static func fromPayload(_ event: [String: Any], now: Date = Date()) -> [String: Any]? {
+        if event["hook_event_name"] != nil { return fromHook(event, now: now) }
+        guard let kind = event["kind"] as? String, kind == "permission" || kind == "stop" else { return nil }
+        if let source = event["source"] as? String, source != "codex" { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let at = (event["at"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? formatter.string(from: now)
+        let project = clip((event["project"] as? String) ?? "codex", 32)
+        let title = kind == "stop" ? "本轮已结束" : clip((event["title"] as? String) ?? "允许这次操作", 48)
+        let id = (event["id"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "\(kind):hook:\(at)"
+        return ["id": id, "kind": kind, "title": title, "project": project, "source": "codex", "at": at]
+    }
+
     public static func fromHook(_ event: [String: Any], now: Date = Date()) -> [String: Any]? {
         guard let name = event["hook_event_name"] as? String else { return nil }
         guard name == "PermissionRequest" || name == "Stop" else { return nil }
@@ -61,9 +75,9 @@ public enum InboxSummary {
         return ""
     }
 
-    private static func clip(_ text: String) -> String {
+    private static func clip(_ text: String, _ max: Int = 48) -> String {
         let chars = Array(text)
-        if chars.count <= 48 { return text }
-        return String(chars.prefix(47)) + "…"
+        if chars.count <= max { return text }
+        return String(chars.prefix(max - 1)) + "…"
     }
 }

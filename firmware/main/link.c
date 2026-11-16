@@ -1,16 +1,19 @@
 #include "link.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cJSON.h"
 #include "driver/usb_serial_jtag.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "host/ble_att.h"
 #include "host/ble_hs.h"
 #include "host/ble_uuid.h"
 #include "host/util/util.h"
@@ -45,33 +48,63 @@ static void reply_line(const char *text) {
     }
 }
 
+typedef struct {
+    char *data;
+    int used;
+    int drop;
+} line_acc_t;
+
+static void *line_alloc(size_t bytes) {
+    void *block = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!block) block = malloc(bytes);
+    return block;
+}
+
+static char *dup_line(const char *text) {
+    size_t n = strlen(text);
+    char *copy = line_alloc(n + 1);
+    if (!copy) return NULL;
+    memcpy(copy, text, n + 1);
+    return copy;
+}
+
 static void push_line(const char *text) {
     if (!lines || !text || !text[0]) return;
     cJSON *root = cJSON_Parse(text);
     cJSON *ver = root ? cJSON_GetObjectItem(root, "v") : NULL;
     int ok = root && cJSON_IsNumber(ver) && ver->valueint == 1;
-    cJSON_Delete(root);
+    if (root) cJSON_Delete(root);
     if (!ok) {
         reply_line("{\"v\":1,\"type\":\"error\",\"error\":\"unsupportedVersion\"}\n");
         return;
     }
-    char copy[1024];
-    snprintf(copy, sizeof copy, "%s", text);
-    xQueueSend(lines, copy, 0);
+    char *copy = dup_line(text);
+    if (!copy) return;
+    if (xQueueSend(lines, &copy, 0) != pdTRUE) free(copy);
 }
 
-static void consume(const uint8_t *data, int len, char *acc, int *used) {
+static void acc_feed(line_acc_t *acc, const uint8_t *data, int len) {
+    if (!acc->data) {
+        acc->data = line_alloc(MOTE_LINE_MAX + 1);
+        if (!acc->data) acc->drop = 1;
+    }
     for (int i = 0; i < len; i++) {
         char ch = (char)data[i];
         if (ch == '\n' || ch == '\r') {
-            if (*used > 0) {
-                acc[*used] = 0;
-                push_line(acc);
-                *used = 0;
+            if (acc->drop) reply_line("{\"v\":1,\"type\":\"error\",\"error\":\"frameTooLarge\"}\n");
+            else if (acc->used > 0 && acc->data) {
+                acc->data[acc->used] = 0;
+                push_line(acc->data);
             }
+            acc->used = 0;
+            acc->drop = 0;
             continue;
         }
-        if (*used < 1023) acc[(*used)++] = ch;
+        if (acc->drop || !acc->data || acc->used >= MOTE_LINE_MAX) {
+            acc->drop = 1;
+            continue;
+        }
+        acc->data[acc->used++] = ch;
     }
 }
 
@@ -93,14 +126,16 @@ static int gatt_write(uint16_t conn, uint16_t attr_handle, struct ble_gatt_acces
     (void)attr_handle;
     (void)arg;
     conn_handle = conn;
-    static char acc[1024];
-    static int used;
+    static line_acc_t acc;
     if (ctxt->op != BLE_GATT_ACCESS_OP_WRITE_CHR) return 0;
     uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
-    uint8_t buf[256];
-    if (len > sizeof buf) len = sizeof buf;
-    ble_hs_mbuf_to_flat(ctxt->om, buf, len, NULL);
-    consume(buf, len, acc, &used);
+    if (len == 0) return 0;
+    uint8_t *buf = malloc(len);
+    if (!buf) return BLE_ATT_ERR_INSUFFICIENT_RES;
+    uint16_t got = 0;
+    ble_hs_mbuf_to_flat(ctxt->om, buf, len, &got);
+    acc_feed(&acc, buf, got);
+    free(buf);
     return 0;
 }
 
@@ -219,17 +254,18 @@ static void tcp_task(void *arg) {
     setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes);
     bind(srv, (struct sockaddr *)&addr, sizeof addr);
     listen(srv, 1);
-    char acc[1024];
+    line_acc_t acc = {0};
     const char *hello = "{\"v\":1,\"type\":\"hello\",\"role\":\"device\"}\n";
+    uint8_t buf[512];
     for (;;) {
         int client = accept(srv, NULL, NULL);
         if (client < 0) continue;
         reply_fd = client;
         send(client, hello, strlen(hello), 0);
-        int used = 0;
-        uint8_t buf[256];
+        acc.used = 0;
+        acc.drop = 0;
         int n;
-        while ((n = recv(client, buf, sizeof buf, 0)) > 0) consume(buf, n, acc, &used);
+        while ((n = recv(client, buf, sizeof buf, 0)) > 0) acc_feed(&acc, buf, n);
         reply_fd = -1;
         close(client);
     }
@@ -261,38 +297,41 @@ static void start_wifi(void) {
     esp_wifi_start();
     wifi_started = 1;
     if (ssid[0]) esp_wifi_connect();
-    xTaskCreate(tcp_task, "tcp", 6144, NULL, 5, NULL);
+    xTaskCreate(tcp_task, "tcp", 8192, NULL, 5, NULL);
 }
 
 static void usb_task(void *arg) {
     (void)arg;
-    usb_serial_jtag_driver_config_t cfg = {.rx_buffer_size = 1024, .tx_buffer_size = 256};
+    usb_serial_jtag_driver_config_t cfg = {.rx_buffer_size = MOTE_LINE_MAX, .tx_buffer_size = 1024};
     if (usb_serial_jtag_driver_install(&cfg) != ESP_OK) {
         ESP_LOGW(TAG, "usb serial busy");
         vTaskDelete(NULL);
         return;
     }
     usb_ready = 1;
-    char acc[1024];
-    int used = 0;
-    uint8_t buf[128];
+    line_acc_t acc = {0};
+    uint8_t buf[512];
     for (;;) {
         int n = usb_serial_jtag_read_bytes(buf, sizeof buf, pdMS_TO_TICKS(200));
-        if (n > 0) consume(buf, n, acc, &used);
+        if (n > 0) acc_feed(&acc, buf, n);
     }
 }
 
 void mote_link_start(void) {
-    lines = xQueueCreate(8, 1024);
+    lines = xQueueCreate(8, sizeof(char *));
     start_wifi();
     start_ble();
-    xTaskCreate(usb_task, "usb", 4096, NULL, 4, NULL);
+    xTaskCreate(usb_task, "usb", 8192, NULL, 4, NULL);
 }
 
 int mote_link_take(char *out, int cap) {
-    char copy[1024];
-    if (!lines || xQueueReceive(lines, copy, 0) != pdTRUE) return 0;
-    snprintf(out, cap, "%s", copy);
+    char *copy = NULL;
+    if (!lines || cap < 2 || xQueueReceive(lines, &copy, 0) != pdTRUE || !copy) return 0;
+    size_t n = strlen(copy);
+    if (n >= (size_t)cap) n = (size_t)cap - 1;
+    memcpy(out, copy, n);
+    out[n] = 0;
+    free(copy);
     return 1;
 }
 

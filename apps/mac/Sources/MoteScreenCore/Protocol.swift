@@ -28,7 +28,7 @@ public enum ProtocolCodec {
             "phase": phase,
             "outputTokS": outputTokS,
             "sessions": ["active": active, "generating": generating, "tools": tools],
-            "history": history.suffix(60),
+            "history": Array(history.suffix(60)),
             "sources": Array(sources.prefix(8))
         ]
     }

@@ -73,6 +73,29 @@ export function summaryFromHook(event, nowIso) {
   };
 }
 
+/**
+ * Cards that may arrive from the installed hook script.
+ * The script POSTs `{kind,title,project,source}` over HTTP.
+ * A raw Codex event (`hook_event_name`) is still accepted, for the in-app test button.
+ */
+export function cardFromHookPayload(payload, nowIso) {
+  if (!payload || typeof payload !== "object") return null;
+  if (payload.hook_event_name) return summaryFromHook(payload, nowIso);
+  if (payload.kind !== "permission" && payload.kind !== "stop") return null;
+  if (payload.source && payload.source !== "codex") return null;
+  const at = payload.at || nowIso || new Date().toISOString();
+  const project = Array.from(String(payload.project || "codex")).slice(0, 32).join("");
+  const title = payload.kind === "stop" ? "本轮已结束" : clip(oneLine(payload.title) || "允许这次操作");
+  return {
+    id: String(payload.id || `${payload.kind}:hook:${at}`),
+    kind: payload.kind,
+    title,
+    project,
+    source: "codex",
+    at,
+  };
+}
+
 export function upsertInbox(items, summary) {
   const next = Array.isArray(items) ? items.slice() : [];
   if (!summary) return next;

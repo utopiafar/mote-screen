@@ -53,6 +53,7 @@ final class AppModel: ObservableObject {
         restore()
         speedClient.onLive = { [weak self] frame in self?.acceptSpeed(frame) }
         link.onConnected = { [weak self] up in self?.panelConnected = up }
+        link.onReady = { [weak self] in self?.sendConfig() }
         hooks.onEvent = { [weak self] event in self?.acceptHook(event) }
         hooks.start()
         refreshHook()
@@ -207,7 +208,7 @@ final class AppModel: ObservableObject {
     }
 
     private func acceptHook(_ event: [String: Any]) {
-        guard let card = InboxSummary.fromHook(event) else { return }
+        guard let card = InboxSummary.fromPayload(event) else { return }
         inbox.removeAll { ($0["id"] as? String) == (card["id"] as? String) }
         inbox.insert(card, at: 0)
         if inbox.count > 8 { inbox.removeLast(inbox.count - 8) }

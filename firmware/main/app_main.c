@@ -210,7 +210,7 @@ void app_main(void) {
     present(1);
     int held[4] = {0};
     int tick = 0;
-    char line[1024];
+    static char line[MOTE_LINE_MAX + 1];
     for (;;) {
         if (pressed(PIN_WHEEL_UP, &held[0])) mote_nav_wheel(&nav, -1, card_count, pending_count());
         if (pressed(PIN_WHEEL_DOWN, &held[1])) mote_nav_wheel(&nav, 1, card_count, pending_count());

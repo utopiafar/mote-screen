@@ -53,7 +53,7 @@ final class HookBridge {
         try template.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
         let url = hooksURL()
-        let existing = readJSON(url)
+        let existing = try loadDocument(url)
         let next = try HookFile.install(document: existing, scriptPath: scriptURL.path)
         try writeJSON(next, url: url)
     }
@@ -61,7 +61,7 @@ final class HookBridge {
     func remove() throws {
         let url = hooksURL()
         if FileManager.default.fileExists(atPath: url.path) {
-            let existing = readJSON(url)
+            let existing = try loadDocument(url)
             let next = try HookFile.remove(document: existing, scriptPath: scriptURL.path)
             try writeJSON(next, url: url)
         }
@@ -71,7 +71,8 @@ final class HookBridge {
     }
 
     func entries() -> (permission: Bool, stop: Bool) {
-        HookFile.find(document: readJSON(hooksURL()), scriptPath: scriptURL.path)
+        guard let document = try? loadDocument(hooksURL()) else { return (false, false) }
+        return HookFile.find(document: document, scriptPath: scriptURL.path)
     }
 
     private func hooksURL() -> URL {
@@ -93,9 +94,19 @@ final class HookBridge {
         throw HookStoreError.path
     }
 
-    private func readJSON(_ url: URL) -> [String: Any]? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    /// nil only when hooks.json is absent. A present file that is not a JSON object throws
+    /// so install/remove leave the user's file untouched.
+    private func loadDocument(_ url: URL) throws -> [String: Any]? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let data = try Data(contentsOf: url)
+        let parsed: Any
+        do {
+            parsed = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw HookStoreError.notObject
+        }
+        guard let object = parsed as? [String: Any] else { throw HookStoreError.notObject }
+        return object
     }
 
     private func writeJSON(_ object: [String: Any], url: URL) throws {
@@ -108,14 +119,38 @@ final class HookBridge {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, done, _ in
             var next = buffer
             if let data { next.append(data) }
-            if let range = next.firstRange(of: Data([0x0A])) ?? (done ? next.startIndex..<next.endIndex : nil), !next.isEmpty {
-                let line = next.subdata(in: next.startIndex..<range.upperBound)
-                if let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any] {
-                    DispatchQueue.main.async { self?.onEvent?(object) }
-                }
+            if let object = Self.httpJSONBody(next) {
+                let response = Data("HTTP/1.1 204 No Content\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".utf8)
+                connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+                DispatchQueue.main.async { self?.onEvent?(object) }
+                return
             }
-            if !done { self?.read(connection, buffer: Data()) }
+            if done || next.count > 64 * 1024 {
+                connection.cancel()
+                return
+            }
+            self?.read(connection, buffer: next)
         }
+    }
+
+    /// The installed script POSTs `{"kind","title","project","source"}`. Body is not the request line.
+    static func httpJSONBody(_ data: Data) -> [String: Any]? {
+        let separator = Data("\r\n\r\n".utf8)
+        guard let headerEnd = data.range(of: separator) else { return nil }
+        let head = String(data: data.subdata(in: data.startIndex..<headerEnd.lowerBound), encoding: .utf8) ?? ""
+        var length: Int?
+        for line in head.split(separator: "\r\n", omittingEmptySubsequences: false) {
+            let parts = line.split(separator: ":", maxSplits: 1).map(String.init)
+            guard parts.count == 2, parts[0].lowercased() == "content-length" else { continue }
+            length = Int(parts[1].trimmingCharacters(in: .whitespaces))
+        }
+        let bodyStart = headerEnd.upperBound
+        let available = data.distance(from: bodyStart, to: data.endIndex)
+        let size = length ?? available
+        guard size >= 0, available >= size else { return nil }
+        let body = data.subdata(in: bodyStart..<data.index(bodyStart, offsetBy: size))
+        guard !body.isEmpty, let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { return nil }
+        return object
     }
 }
 
@@ -198,6 +233,8 @@ final class AgentSpeedClient {
 
 final class DeviceLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var onConnected: ((Bool) -> Void)?
+    /// Fires when the selected pipe can take a frame: Wi-Fi ready, USB opened, or the BLE write characteristic found.
+    var onReady: (() -> Void)?
     private(set) var usbPlugged = false
     private var settings = ScreenSettings.default
     private var connection: NWConnection?
@@ -208,6 +245,7 @@ final class DeviceLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     private var writeChar: CBCharacteristic?
     private let queue = DispatchQueue(label: "mote-screen.link")
     private var serialFD: Int32 = -1
+    private var usbWatch: DispatchSourceTimer?
 
     static func espPorts() -> [String] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: "/dev")) ?? []
@@ -218,12 +256,22 @@ final class DeviceLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     }
 
     func apply(_ settings: ScreenSettings) {
-        self.settings = settings
-        usbPlugged = !settings.usbPort.isEmpty && FileManager.default.fileExists(atPath: settings.usbPort)
-        reconnect()
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.settings = settings
+            self.sampleUsb()
+            self.reconnect()
+            self.armUsbWatch()
+        }
     }
 
     func send(_ data: Data) {
+        queue.async { [weak self] in
+            self?.sendNow(data)
+        }
+    }
+
+    private func sendNow(_ data: Data) {
         let pipe = activeTransport(link: settings.link, usbFallback: settings.usbFallback, usbPlugged: usbPlugged)
         switch pipe {
         case .usb:
@@ -234,6 +282,30 @@ final class DeviceLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
         case .wifi:
             connection?.send(content: data, completion: .contentProcessed { _ in })
         }
+    }
+
+    private func sampleUsb() {
+        usbPlugged = settings.usbFallback && portPresent()
+    }
+
+    private func portPresent() -> Bool {
+        !settings.usbPort.isEmpty && FileManager.default.fileExists(atPath: settings.usbPort)
+    }
+
+    private func armUsbWatch() {
+        if usbWatch != nil { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 1, repeating: 1)
+        timer.setEventHandler { [weak self] in self?.pollUsb() }
+        timer.resume()
+        usbWatch = timer
+    }
+
+    private func pollUsb() {
+        let was = usbPlugged
+        sampleUsb()
+        if usbPlugged == was { return }
+        reconnect()
     }
 
     func browseWiFi(found: @escaping (String) -> Void) {
@@ -277,6 +349,8 @@ final class DeviceLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         writeChar = service.characteristics?.first { $0.uuid == writeUUID }
+        guard writeChar != nil else { return }
+        DispatchQueue.main.async { self.onReady?() }
     }
 
     private func reconnect() {
@@ -286,7 +360,11 @@ final class DeviceLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
         let pipe = activeTransport(link: settings.link, usbFallback: settings.usbFallback, usbPlugged: usbPlugged)
         if pipe == .usb {
             openSerial()
-            DispatchQueue.main.async { self.onConnected?(self.serialFD >= 0) }
+            let opened = serialFD >= 0
+            DispatchQueue.main.async {
+                self.onConnected?(opened)
+                if opened { self.onReady?() }
+            }
             return
         }
         if pipe == .bluetooth {
@@ -305,8 +383,12 @@ final class DeviceLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
         }
         let connection = NWConnection(host: NWEndpoint.Host(String(host)), port: port, using: .tcp)
         connection.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
+            let wifi = activeTransport(link: self.settings.link, usbFallback: self.settings.usbFallback, usbPlugged: self.usbPlugged) == .wifi
             DispatchQueue.main.async {
-                self?.onConnected?(state == .ready)
+                guard wifi else { return }
+                self.onConnected?(state == .ready)
+                if state == .ready { self.onReady?() }
             }
         }
         connection.start(queue: queue)
@@ -326,10 +408,20 @@ final class DeviceLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
     }
 
     private func writeSerial(_ data: Data) {
+        if !portPresent() {
+            closeSerial()
+            pollUsb()
+            return
+        }
         if serialFD < 0 { openSerial() }
         guard serialFD >= 0 else { return }
-        data.withUnsafeBytes { buffer in
-            _ = Darwin.write(serialFD, buffer.baseAddress, buffer.count)
+        let wrote = data.withUnsafeBytes { buffer -> Int in
+            guard let base = buffer.baseAddress else { return -1 }
+            return Darwin.write(serialFD, base, buffer.count)
+        }
+        if wrote < 0 {
+            closeSerial()
+            pollUsb()
         }
     }
 

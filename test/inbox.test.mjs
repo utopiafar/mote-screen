@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { summaryFromHook, upsertInbox } from "../core/inbox.mjs";
+import { summaryFromHook, cardFromHookPayload, upsertInbox } from "../core/inbox.mjs";
 import { parseLiveFrame } from "../core/speed.mjs";
 
 test("PermissionRequest 只留短标题和项目名", () => {
@@ -71,4 +71,29 @@ test("Agent Speed 帧可带其他来源，但没有额度", () => {
   assert.equal(speed.sources[1].name, "Cursor");
   assert.equal("quota" in speed, false);
   assert.deepEqual(speed.history, [70, 75.9]);
+});
+
+test("脚本摘要和原始 hook 事件都能进同一张卡", () => {
+  const posted = cardFromHookPayload({
+    id: "perm:s1:t1",
+    kind: "permission",
+    title: "允许运行 git push",
+    project: "website",
+    source: "codex",
+  }, "2026-11-16T03:57:10.000Z");
+  assert.equal(posted.title, "允许运行 git push");
+  assert.equal(posted.project, "website");
+  assert.equal(posted.source, "codex");
+  assert.equal("hook_event_name" in posted, false);
+  assert.equal("last_assistant_message" in posted, false);
+  const raw = cardFromHookPayload({
+    hook_event_name: "Stop",
+    session_id: "s1",
+    cwd: "/work/notes",
+    last_assistant_message: "不要出现",
+  }, "2026-11-16T03:57:20.000Z");
+  assert.equal(raw.kind, "stop");
+  assert.equal(raw.title, "本轮已结束");
+  assert.equal("last_assistant_message" in raw, false);
+  assert.equal(cardFromHookPayload({ kind: "permission", source: "cursor", title: "x" }), null);
 });
