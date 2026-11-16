@@ -1,0 +1,58 @@
+{
+  "menu": [
+    {
+      "setupInProgress": true,
+      "agentSpeedConnected": false,
+      "einkConnected": false,
+      "hook": "未安装",
+      "expect": "设置中"
+    },
+    {
+      "setupInProgress": false,
+      "agentSpeedConnected": true,
+      "einkConnected": true,
+      "hook": "已失效",
+      "expect": "Hook 失效"
+    },
+    {
+      "setupInProgress": false,
+      "agentSpeedConnected": true,
+      "einkConnected": false,
+      "hook": "已安装",
+      "expect": "未连接"
+    },
+    {
+      "setupInProgress": false,
+      "agentSpeedConnected": true,
+      "einkConnected": true,
+      "hook": "已安装",
+      "expect": "已连接"
+    },
+    {
+      "setupInProgress": false,
+      "agentSpeedConnected": true,
+      "einkConnected": true,
+      "hook": "已移除",
+      "expect": "未连接"
+    }
+  ],
+  "push": [
+    { "phase": "generating", "inboxDirty": true, "elapsed": 0, "expectMs": 0 },
+    { "phase": "idle", "inboxDirty": true, "elapsed": 50000, "expectMs": 0 },
+    { "phase": "generating", "inboxDirty": false, "elapsed": 0, "expectMs": 15000 },
+    { "phase": "tools", "inboxDirty": false, "elapsed": 5000, "expectMs": 10000 },
+    { "phase": "idle", "inboxDirty": false, "elapsed": 30000, "expectMs": 30000 },
+    { "phase": "idle", "inboxDirty": false, "elapsed": 60000, "expectMs": 0 }
+  ],
+  "refresh": [
+    { "partials": 0, "ms": 0, "changed": true, "expect": "partial" },
+    { "partials": 9, "ms": 0, "changed": true, "expect": "partial" },
+    { "partials": 10, "ms": 0, "changed": true, "expect": "full" },
+    { "partials": 0, "ms": 599999, "changed": false, "expect": "none" },
+    { "partials": 0, "ms": 600000, "changed": false, "expect": "full" },
+    { "partials": 2, "ms": 600000, "changed": true, "expect": "full" },
+    { "partials": 0, "ms": 0, "changed": false, "expect": "none" }
+  ],
+  "speedLine": "{\"v\":1,\"type\":\"speed\",\"seq\":12,\"phase\":\"generating\",\"outputTokS\":75.9,\"quota\":{\"left\":9},\"sessions\":{\"active\":3,\"generating\":2,\"tools\":1},\"history\":[70,75.9],\"sources\":[{\"name\":\"Codex\",\"outputTokS\":48.2},{\"name\":\"Claude Code\",\"outputTokS\":27.7},{\"name\":\"Cursor\",\"outputTokS\":0}]}\n",
+  "inboxLine": "{\"v\":1,\"type\":\"inbox\",\"seq\":4,\"items\":[{\"id\":\"1\",\"kind\":\"permission\",\"title\":\"允许运行 cargo test\",\"project\":\"payments-api\",\"source\":\"codex\",\"at\":\"2026-11-16T03:57:00.000Z\"},{\"id\":\"2\",\"kind\":\"permission\",\"title\":\"打开 cursor 里的对话\",\"project\":\"nope\",\"source\":\"cursor\",\"at\":\"2026-11-16T03:57:00.000Z\"},{\"id\":\"3\",\"kind\":\"stop\",\"title\":\"本轮已结束\",\"project\":\"notes-cli\",\"source\":\"codex\",\"at\":\"2026-11-16T03:55:00.000Z\"}]}\n"
+}
