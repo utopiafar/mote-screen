@@ -58,7 +58,7 @@ Hook 写在用户目录的 `~/.codex/hooks.json`，只追加 `PermissionRequest`
 
 目标板是微雪 ESP32-S3-ePaper-3.97（16MB 闪存，8MB PSRAM，480×800 的界面，四灰阶）。引脚和初始化命令来自微雪公开的 ESP-IDF 示例和原理图，见 `firmware/components/epd/`。
 
-编译（不会烧录）：
+编译（不会烧录）。第一次编译会从乐鑫组件库取 `espressif/mdns`，因为 ESP-IDF 5.5 里这份 mDNS 不再随内核发布。
 
 ```bash
 idf.py -C firmware build

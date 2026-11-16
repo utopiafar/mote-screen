@@ -27,7 +27,7 @@ static int partials;
 static int ms_since_full;
 static int content_seq;
 static int last_seq = -1;
-static char picture[128];
+static char picture[192];
 static bool partial_on_change = true;
 static int full_every_n = 10;
 static int full_every_min = 10;

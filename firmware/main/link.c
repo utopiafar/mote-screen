@@ -171,6 +171,17 @@ static void start_ble(void) {
     nimble_port_freertos_init(host_task);
 }
 
+static void copy_cred(uint8_t *dst, size_t cap, const char *src) {
+    size_t n = 0;
+    if (src) {
+        while (src[n] && n + 1 < cap) {
+            dst[n] = (uint8_t)src[n];
+            n++;
+        }
+    }
+    if (n < cap) dst[n] = 0;
+}
+
 static void remember_wifi(const char *ssid, const char *password) {
     nvs_handle_t nvs;
     if (nvs_open("mote", NVS_READWRITE, &nvs) != ESP_OK) return;
@@ -179,8 +190,8 @@ static void remember_wifi(const char *ssid, const char *password) {
     nvs_commit(nvs);
     nvs_close(nvs);
     wifi_config_t cfg = {0};
-    snprintf((char *)cfg.sta.ssid, sizeof cfg.sta.ssid, "%s", ssid);
-    snprintf((char *)cfg.sta.password, sizeof cfg.sta.password, "%s", password ? password : "");
+    copy_cred(cfg.sta.ssid, sizeof cfg.sta.ssid, ssid);
+    copy_cred(cfg.sta.password, sizeof cfg.sta.password, password ? password : "");
     esp_wifi_set_config(WIFI_IF_STA, &cfg);
     esp_wifi_connect();
 }
@@ -243,8 +254,8 @@ static void start_wifi(void) {
     }
     if (ssid[0]) {
         wifi_config_t sta = {0};
-        snprintf((char *)sta.sta.ssid, sizeof sta.sta.ssid, "%s", ssid);
-        snprintf((char *)sta.sta.password, sizeof sta.sta.password, "%s", pass);
+        copy_cred(sta.sta.ssid, sizeof sta.sta.ssid, ssid);
+        copy_cred(sta.sta.password, sizeof sta.sta.password, pass);
         esp_wifi_set_config(WIFI_IF_STA, &sta);
     }
     esp_wifi_start();
