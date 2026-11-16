@@ -4,7 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* 2-bit portrait framebuffer, 480×800, 4 pixels per byte, level 3 = white. */
+/* 2-bit portrait framebuffer, 480×800, 4 pixels per byte, level 3 = white.
+ * Flush packs it to 1-bit. full selects the base waveform (0xF7); otherwise partial (0xFF). */
 void epd_init(void);
 void epd_present(const uint8_t *portrait, int full);
 void epd_sleep(void);

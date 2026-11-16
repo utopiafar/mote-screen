@@ -127,15 +127,19 @@ export function msUntilPush({ settings, phase, inboxDirty, lastPushMs, nowMs }) 
 }
 
 /**
- * Panel policy. "full" clears residual image and may flash.
- * A page change is always full. partialOnChange does not cover that.
- * On the same page, new digits or card text stay partial until the count or the timer.
+ * Panel policy. "full" is the occasional 1-bit base refresh and may flash.
+ * A page change stays "partial": the non-flashing update that keeps the previous frame as its base.
+ * partialOnChange does not cover page changes. It only applies to later updates on the same page.
+ * A due count or timer still requests "full", including when it lands on a page change.
  * A due timer refreshes even when the picture has not changed.
  */
 export function decideRefresh({ policy, contentChanged, viewChanged, partialsSinceFull, msSinceFull }) {
-  if (viewChanged) return "full";
   const timeDue = policy.fullEveryMin > 0 && msSinceFull >= policy.fullEveryMin * 60 * 1000;
   const countDue = partialsSinceFull >= policy.fullEveryN;
+  if (viewChanged) {
+    if (timeDue || countDue) return "full";
+    return "partial";
+  }
   if (!contentChanged && !timeDue) return "none";
   if (timeDue || countDue || !policy.partialOnChange) return "full";
   return "partial";

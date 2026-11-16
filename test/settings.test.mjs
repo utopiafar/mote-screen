@@ -96,12 +96,26 @@ test("刷新策略：局部优先，次数或时间到了改完整", () => {
     viewChanged: true,
     partialsSinceFull: 0,
     msSinceFull: 0,
-  }), "full");
+  }), "partial");
   assert.equal(decideRefresh({
     policy,
     contentChanged: false,
     viewChanged: true,
     partialsSinceFull: 0,
+    msSinceFull: 0,
+  }), "partial");
+  assert.equal(decideRefresh({
+    policy: { ...policy, partialOnChange: false },
+    contentChanged: true,
+    viewChanged: true,
+    partialsSinceFull: 0,
+    msSinceFull: 0,
+  }), "partial");
+  assert.equal(decideRefresh({
+    policy,
+    contentChanged: true,
+    viewChanged: true,
+    partialsSinceFull: 10,
     msSinceFull: 0,
   }), "full");
 });

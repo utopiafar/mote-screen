@@ -90,9 +90,12 @@ public enum RefreshKind: String {
 }
 
 public func decideRefresh(partialOnChange: Bool, fullEveryN: Int, fullEveryMin: Int, contentChanged: Bool, partialsSinceFull: Int, msSinceFull: Int, viewChanged: Bool = false) -> RefreshKind {
-    if viewChanged { return .full }
     let timeDue = fullEveryMin > 0 && msSinceFull >= fullEveryMin * 60 * 1000
     let countDue = partialsSinceFull >= fullEveryN
+    if viewChanged {
+        if timeDue || countDue { return .full }
+        return .partial
+    }
     if !contentChanged && !timeDue { return .none }
     if timeDue || countDue || !partialOnChange { return .full }
     return .partial

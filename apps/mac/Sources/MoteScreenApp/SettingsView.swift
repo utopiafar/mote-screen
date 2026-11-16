@@ -176,7 +176,7 @@ struct SettingsView: View {
             })) {
                 ForEach(ScreenSettings.fullEveryMinChoices, id: \.self) { n in Text("\(n) 分钟").tag(n) }
             }
-            Text("局部刷新更快、更省电，灰阶容易留下残影。完整刷新更干净，也更费电。默认按均衡来，照顾 1200 mAh 的电池。")
+            Text("换页不闪屏。基线刷新只在开机，以及每 N 次局部刷新或每隔几分钟清一次残影，这时可能会闪一下。局部更快、更省电。默认按均衡来，照顾 1200 mAh 的电池。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             HStack {
                 Button("扫描 Wi-Fi 设备") { model.scanWiFi() }

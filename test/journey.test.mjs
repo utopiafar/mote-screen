@@ -57,20 +57,23 @@ test("待处理立刻推送，速度要等间隔，十分钟后完整刷新", ()
   assert.equal(model.lastRefresh, "full");
 });
 
-test("换页走完整刷新，同一页上的新卡片仍可局部刷新", () => {
+test("换页走局部刷新，开机和到点清残影仍走基线", () => {
   const model = createModel();
+  assert.equal(model.lastRefresh, "full");
   connectSpeed(model);
   installHook(model);
   finishSetup(model);
   scanWifi(model);
   deviceInput(model, "press");
   assert.equal(model.device.view, "overview");
-  assert.equal(model.lastRefresh, "full");
+  assert.equal(model.lastRefresh, "partial");
   inject(model, "permission");
   assert.equal(model.device.view, "overview");
   assert.equal(model.lastRefresh, "partial");
   deviceInput(model, "boot");
   assert.equal(model.device.view, "home");
+  assert.equal(model.lastRefresh, "partial");
+  advance(model, 600_000);
   assert.equal(model.lastRefresh, "full");
 });
 

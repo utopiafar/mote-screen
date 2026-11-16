@@ -19,12 +19,25 @@ int mote_ms_until_push(int push_generating_sec, int push_idle_sec, const char *p
 }
 
 mote_refresh_t mote_decide_refresh(bool partial_on_change, int full_every_n, int full_every_min, bool content_changed, int partials_since_full, int ms_since_full, bool view_changed) {
-    if (view_changed) return MOTE_REFRESH_FULL;
     bool time_due = full_every_min > 0 && ms_since_full >= full_every_min * 60 * 1000;
     bool count_due = partials_since_full >= full_every_n;
+    if (view_changed) {
+        if (time_due || count_due) return MOTE_REFRESH_FULL;
+        return MOTE_REFRESH_PARTIAL;
+    }
     if (!content_changed && !time_due) return MOTE_REFRESH_NONE;
     if (time_due || count_due || !partial_on_change) return MOTE_REFRESH_FULL;
     return MOTE_REFRESH_PARTIAL;
+}
+
+int mote_turn_on_data(mote_refresh_t kind) {
+    if (kind == MOTE_REFRESH_FULL) return MOTE_TURN_BASE;
+    if (kind == MOTE_REFRESH_PARTIAL) return MOTE_TURN_PART;
+    return 0;
+}
+
+int mote_use_base(int force, mote_refresh_t kind) {
+    return force || kind == MOTE_REFRESH_FULL;
 }
 
 mote_pipe_t mote_active_transport(bool bluetooth, bool usb_fallback, bool usb_plugged) {

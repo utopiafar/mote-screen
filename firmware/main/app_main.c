@@ -173,7 +173,7 @@ static void present(int force) {
     int changed = strcmp(key, picture) != 0 || content_seq != last_seq;
     mote_refresh_t kind = mote_decide_refresh(partial_on_change, full_every_n, full_every_min, changed || force, partials, ms_since_full, view_changed);
     if (kind == MOTE_REFRESH_NONE && !force) return;
-    int full = force || kind == MOTE_REFRESH_FULL;
+    int full = mote_use_base(force, kind);
     static uint8_t *fb;
     if (!fb) {
         fb = heap_caps_malloc(MOTE_UI_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -192,7 +192,7 @@ static void present(int force) {
     last_seq = content_seq;
     shown = 1;
     shown_view = nav.view;
-    ESP_LOGI(TAG, "refresh %s", full ? "full" : "partial");
+    ESP_LOGI(TAG, "refresh %s", full ? "base" : "part");
 }
 
 void app_main(void) {

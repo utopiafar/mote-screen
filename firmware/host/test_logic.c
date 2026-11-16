@@ -44,8 +44,19 @@ static void refresh_cases(void) {
     expect_int("quiet", mote_decide_refresh(true, 10, 10, false, 0, 599999, false), MOTE_REFRESH_NONE);
     expect_int("time", mote_decide_refresh(true, 10, 10, false, 0, 600000, false), MOTE_REFRESH_FULL);
     expect_int("off", mote_decide_refresh(false, 10, 10, true, 0, 0, false), MOTE_REFRESH_FULL);
-    expect_int("page", mote_decide_refresh(true, 10, 10, true, 0, 0, true), MOTE_REFRESH_FULL);
-    expect_int("page-quiet", mote_decide_refresh(true, 10, 10, false, 0, 0, true), MOTE_REFRESH_FULL);
+    expect_int("page", mote_decide_refresh(true, 10, 10, true, 0, 0, true), MOTE_REFRESH_PARTIAL);
+    expect_int("page-quiet", mote_decide_refresh(true, 10, 10, false, 0, 0, true), MOTE_REFRESH_PARTIAL);
+    expect_int("page-off", mote_decide_refresh(false, 10, 10, true, 0, 0, true), MOTE_REFRESH_PARTIAL);
+    expect_int("page-count", mote_decide_refresh(true, 10, 10, true, 10, 0, true), MOTE_REFRESH_FULL);
+    mote_refresh_t page = mote_decide_refresh(true, 10, 10, true, 0, 0, true);
+    mote_refresh_t cleanup = mote_decide_refresh(true, 10, 10, false, 0, 600000, false);
+    expect_int("page-byte", mote_turn_on_data(page), MOTE_TURN_PART);
+    expect_int("page-not-base", mote_use_base(0, page), 0);
+    expect_int("boot", mote_use_base(1, MOTE_REFRESH_PARTIAL), 1);
+    expect_int("boot-byte", mote_turn_on_data(MOTE_REFRESH_FULL), MOTE_TURN_BASE);
+    expect_int("cleanup", mote_use_base(0, cleanup), 1);
+    expect_int("cleanup-byte", mote_turn_on_data(cleanup), MOTE_TURN_BASE);
+    expect_int("not-4gray", mote_turn_on_data(MOTE_REFRESH_FULL) == 0xD7 || mote_turn_on_data(page) == 0xD7, 0);
 }
 
 static void pipe_cases(void) {

@@ -184,7 +184,7 @@ function noteRefresh(model, contentChanged, viewChanged) {
     model.partialsSinceFull = 0;
     model.msSinceFull = 0;
     model.framebuffer = snapshot(model);
-    log(model, "墨水屏完整刷新");
+    log(model, "墨水屏基线刷新");
   }
 }
 

@@ -1,6 +1,7 @@
 #include "epd.h"
 
 #include "board.h"
+#include "mote_logic.h"
 #include "ui.h"
 
 #include <stdlib.h>
@@ -13,14 +14,22 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-/* Command bytes follow the public Waveshare ESP-IDF example
- * ESP-IDF/01_E-Paper_Example/components/epaper_port/epaper_port.c
- * for this panel (SSD1677, 800×480). They are not new waveforms.
+/* 1-bit paths from the published Waveshare 3.97 driver and the xiaozhi
+ * board driver (custom_lcd_display.cc). No 4-gray init (0x1A=0x5A) and
+ * no 4-gray turn-on (0x22=0xD7).
+ *
+ * EPD_Init once at boot. Display_Base writes the same frame to 0x24 and
+ * 0x26, then 0x22=0xF7. That is the baseline, used for the first paint
+ * and the occasional cleanup. EPD_Init_Partial (reset, 0x18=0x80,
+ * border 0x3C=0x80, full-frame window) runs when a partial series
+ * starts, not on every frame. Display_Partial writes 0x24 only and
+ * turns on with 0x22=0xFF, with no reset, so 0x26 stays the previous
+ * image and only changed pixels move.
  */
 
 static const char *TAG = "epd";
 static spi_device_handle_t spi;
-static int gray_ready;
+static int in_partial;
 
 static void send_byte(uint8_t value) {
     spi_transaction_t t = {.length = 8, .tx_buffer = &value};
@@ -66,13 +75,10 @@ static void reset_panel(void) {
     vTaskDelay(pdMS_TO_TICKS(50));
 }
 
-static void window_full(void) {
-    cmd(0x01);
-    dat((EPD_NATIVE_H - 1) % 256);
-    dat((EPD_NATIVE_H - 1) / 256);
-    dat(0x02);
-    cmd(0x11);
-    dat(0x01);
+/* Same full-frame window as EPD_Init. Display_Partial addresses X in
+ * bytes and then multiplies by 8; for a full 800-wide frame that stops
+ * at 792. The init window covers the RAM the 48000-byte buffer fills. */
+static void set_full_window(void) {
     cmd(0x44);
     dat(0x00);
     dat(0x00);
@@ -89,7 +95,6 @@ static void window_full(void) {
     cmd(0x4F);
     dat(0x00);
     dat(0x00);
-    wait_idle();
 }
 
 static void common_power(void) {
@@ -101,36 +106,46 @@ static void common_power(void) {
     dat(0x80);
 }
 
-static void enter_gray(void) {
+static void hw_init(void) {
     reset_panel();
     wait_idle();
     cmd(0x12);
     wait_idle();
-    common_power();
-    window_full();
-    cmd(0x3C);
-    dat(0x01);
     cmd(0x18);
     dat(0x80);
-    cmd(0x1A);
-    dat(0x5A);
-    gray_ready = 1;
+    common_power();
+    cmd(0x01);
+    dat((EPD_NATIVE_H - 1) % 256);
+    dat((EPD_NATIVE_H - 1) / 256);
+    dat(0x02);
+    cmd(0x3C);
+    dat(0x01);
+    cmd(0x11);
+    dat(0x01);
+    set_full_window();
+    wait_idle();
+    in_partial = 0;
 }
 
-static void enter_partial(void) {
+/* xiaozhi EPD_Init_Partial: reset once for the series, temperature
+ * sensor 0x18=0x80, border 0x3C=0x80 (not the full-refresh 0x01). */
+static void init_partial(void) {
     reset_panel();
     wait_idle();
-    cmd(0x12);
-    wait_idle();
-    common_power();
-    window_full();
-    cmd(0x3C);
-    dat(0x01);
     cmd(0x18);
     dat(0x80);
-    cmd(0x1A);
-    dat(0x6A);
-    gray_ready = 0;
+    cmd(0x3C);
+    dat(0x80);
+    set_full_window();
+    wait_idle();
+    in_partial = 1;
+}
+
+static void turn_on(uint8_t sequence) {
+    cmd(0x22);
+    dat(sequence);
+    cmd(0x20);
+    wait_idle();
 }
 
 static int portrait_level(const uint8_t *fb, int x, int y) {
@@ -139,21 +154,8 @@ static int portrait_level(const uint8_t *fb, int x, int y) {
     return (fb[i >> 2] >> shift) & 3;
 }
 
-/* Rotate portrait 480×800 onto the panel's 800×480 RAM. */
-static void pack_gray(const uint8_t *portrait, uint8_t *out) {
-    memset(out, 0xFF, EPD_NATIVE_W * EPD_NATIVE_H / 4);
-    for (int y = 0; y < MOTE_UI_H; y++) {
-        for (int x = 0; x < MOTE_UI_W; x++) {
-            int px = y;
-            int py = MOTE_UI_W - 1 - x;
-            int level = portrait_level(portrait, x, y);
-            int i = py * EPD_NATIVE_W + px;
-            int shift = (3 - (i & 3)) * 2;
-            out[i >> 2] = (uint8_t)((out[i >> 2] & ~(3 << shift)) | (level << shift));
-        }
-    }
-}
-
+/* Rotate portrait 480×800 onto the panel's 800×480 RAM.
+ * Level below 2 is black. The UI is 1-bit text. */
 static void pack_mono(const uint8_t *portrait, uint8_t *out) {
     memset(out, 0xFF, EPD_NATIVE_W * EPD_NATIVE_H / 8);
     for (int y = 0; y < MOTE_UI_H; y++) {
@@ -166,46 +168,6 @@ static void pack_mono(const uint8_t *portrait, uint8_t *out) {
             out[i >> 3] &= (uint8_t)~(0x80 >> (i & 7));
         }
     }
-}
-
-static uint8_t gray_plane_byte(uint8_t first, uint8_t second, int old_plane) {
-    uint8_t temp3 = 0;
-    uint8_t bytes[2] = {first, second};
-    for (int j = 0; j < 2; j++) {
-        uint8_t temp1 = bytes[j];
-        for (int k = 0; k < 2; k++) {
-            uint8_t temp2 = temp1 & 0xC0;
-            if (!old_plane) {
-                if (temp2 == 0x00 || temp2 == 0x80) temp3 |= 0x01;
-            } else if (temp2 == 0x00 || temp2 == 0x40) {
-                temp3 |= 0x01;
-            }
-            temp3 <<= 1;
-            temp1 <<= 2;
-            temp2 = temp1 & 0xC0;
-            if (!old_plane) {
-                if (temp2 == 0x00 || temp2 == 0x80) temp3 |= 0x01;
-            } else if (temp2 == 0x00 || temp2 == 0x40) {
-                temp3 |= 0x01;
-            }
-            if (j != 1 || k != 1) temp3 <<= 1;
-            temp1 <<= 2;
-        }
-    }
-    return temp3;
-}
-
-/* Plane split matches the public EPD_Display_4Gray for this panel. */
-static void write_gray_planes(const uint8_t *image) {
-    size_t count = (EPD_NATIVE_W / 8) * EPD_NATIVE_H;
-    cmd(0x24);
-    for (size_t i = 0; i < count; i++) dat(gray_plane_byte(image[i * 2], image[i * 2 + 1], 0));
-    cmd(0x26);
-    for (size_t i = 0; i < count; i++) dat(gray_plane_byte(image[i * 2], image[i * 2 + 1], 1));
-    cmd(0x22);
-    dat(0xD7);
-    cmd(0x20);
-    wait_idle();
 }
 
 void epd_init(void) {
@@ -239,33 +201,34 @@ void epd_init(void) {
     };
     ESP_ERROR_CHECK(spi_bus_initialize(SPI3_HOST, &bus, SPI_DMA_CH_AUTO));
     ESP_ERROR_CHECK(spi_bus_add_device(SPI3_HOST, &dev, &spi));
+    hw_init();
 }
 
 void epd_present(const uint8_t *portrait, int full) {
-    /* BUSY stays high while the panel is updating. Do not reset or send the next frame until it drops. */
+    /* BUSY stays high while the panel is updating. Do not start another refresh until it drops. */
     wait_idle();
+    size_t n = (size_t)EPD_NATIVE_W * EPD_NATIVE_H / 8;
+    uint8_t *image = heap_caps_malloc(n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!image) image = malloc(n);
+    if (!image) return;
+    pack_mono(portrait, image);
     if (full) {
-        if (!gray_ready) enter_gray();
-        uint8_t *image = heap_caps_malloc(EPD_NATIVE_W * EPD_NATIVE_H / 4, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (!image) image = malloc(EPD_NATIVE_W * EPD_NATIVE_H / 4);
-        if (!image) return;
-        pack_gray(portrait, image);
-        write_gray_planes(image);
-        free(image);
-    } else {
-        if (gray_ready) enter_partial();
-        uint8_t *image = heap_caps_malloc(EPD_NATIVE_W * EPD_NATIVE_H / 8, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (!image) image = malloc(EPD_NATIVE_W * EPD_NATIVE_H / 8);
-        if (!image) return;
-        pack_mono(portrait, image);
+        /* Back from a partial series, EPD_Init again so 0xF7 runs from the full-refresh border. */
+        if (in_partial) hw_init();
         cmd(0x24);
-        dat_buf(image, EPD_NATIVE_W * EPD_NATIVE_H / 8);
-        cmd(0x22);
-        dat(0xFF);
-        cmd(0x20);
-        wait_idle();
-        free(image);
+        dat_buf(image, n);
+        cmd(0x26);
+        dat_buf(image, n);
+        turn_on(MOTE_TURN_BASE);
+        init_partial();
+    } else {
+        if (!in_partial) init_partial();
+        set_full_window();
+        cmd(0x24);
+        dat_buf(image, n);
+        turn_on(MOTE_TURN_PART);
     }
+    free(image);
 }
 
 void epd_sleep(void) {
