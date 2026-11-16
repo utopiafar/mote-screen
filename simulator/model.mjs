@@ -86,7 +86,7 @@ export function createModel() {
     device: createDeviceState(),
     partialsSinceFull: 0,
     msSinceFull: 0,
-    lastRefresh: "none",
+    lastRefresh: "full",
     pictureKey: "",
     framebuffer: null,
     seq: 1,
@@ -167,12 +167,11 @@ function pictureKey(model) {
   });
 }
 
-function applyPicture(model) {
-  const key = pictureKey(model);
-  const changed = key !== model.pictureKey;
+function noteRefresh(model, contentChanged, viewChanged) {
   const kind = decideRefresh({
     policy: model.settings,
-    contentChanged: changed,
+    contentChanged,
+    viewChanged,
     partialsSinceFull: model.partialsSinceFull,
     msSinceFull: model.msSinceFull,
   });
@@ -187,6 +186,12 @@ function applyPicture(model) {
     model.framebuffer = snapshot(model);
     log(model, "墨水屏完整刷新");
   }
+}
+
+function applyPicture(model) {
+  const key = pictureKey(model);
+  const changed = key !== model.pictureKey;
+  noteRefresh(model, changed, false);
   model.pictureKey = key;
 }
 
@@ -438,11 +443,27 @@ export function clearSecrets(model) {
   log(model, "已清除访问码和设备地址");
 }
 
+export function selectOverview(model, index) {
+  if (model.device.view !== "overview" || model.device.ovSel === index) return;
+  model.device.ovSel = index;
+  noteRefresh(model, true, false);
+}
+
+export function selectHome(model, index) {
+  if (model.device.view !== "home" || model.device.homeSel === index) return;
+  model.device.homeSel = index;
+  noteRefresh(model, true, false);
+}
+
 export function deviceInput(model, action) {
+  const before = JSON.stringify(model.device);
+  const beforeView = model.device.view;
   if (action === "wheel-up") model.device = wheel(model.device, -1, model.inbox);
   if (action === "wheel-down") model.device = wheel(model.device, 1, model.inbox);
   if (action === "press") model.device = press(model.device, model.inbox);
   if (action === "boot") model.device = boot(model.device);
+  if (JSON.stringify(model.device) === before) return;
+  noteRefresh(model, true, model.device.view !== beforeView);
 }
 
 export function foreignHookSurvived(model) {

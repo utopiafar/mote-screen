@@ -22,6 +22,17 @@ button, select { font: inherit; color: inherit; }
   justify-content: center;
   gap: 14px;
 }
+.panel-stack { display: flex; flex-direction: column; gap: 8px; }
+.refresh-flag {
+  align-self: flex-start;
+  font-size: 13px;
+  font-weight: 700;
+  color: #111;
+  background: #fff;
+  border: 2px solid #111;
+  padding: 4px 8px;
+}
+.refresh-flag[data-refresh="full"] { background: #111; color: #fff; }
 .hw { display: flex; flex-direction: column; gap: 10px; align-items: center; padding-top: 18px; }
 .hw .cap { font-size: 11px; letter-spacing: 0.08em; color: rgba(255,255,255,.72); }
 .wheel { width: 64px; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,.35); background: #f4f4f5; }

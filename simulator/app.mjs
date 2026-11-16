@@ -1,7 +1,7 @@
 import {
   createModel, loadStage, menuLabel, popoverRows, hookLabel, panelConnected, connectSpeed, installHook,
   finishSetup, go, patchSettings, scanWifi, scanBluetooth, chooseUsb, setUsbPlugged, inject, advance,
-  removeHook, clearSecrets, deviceInput, phaseLabel, projectMeta, pendingItems, viewTitle, APPS, refreshSummary,
+  removeHook, clearSecrets, deviceInput, selectHome, selectOverview, phaseLabel, projectMeta, pendingItems, viewTitle, APPS, refreshSummary,
   transportName, activeTransport, foreignHookSurvived,
 } from "./model.mjs";
 import { PUSH_CHOICES_SEC, FULL_EVERY_N_CHOICES, FULL_EVERY_MIN_CHOICES, PRESETS, formatSeconds } from "../core/settings.mjs";
@@ -50,7 +50,7 @@ function spark(pts, w, h, pad) {
   const xy = pts.map((v, i) => [pad + i * step, h - pad - (v / max) * (h - pad * 2)]);
   const d = xy.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
   const area = `${d} L ${xy.at(-1)[0].toFixed(1)} ${h - 2} L ${xy[0][0].toFixed(1)} ${h - 2} Z`;
-  return `<path d="${area}" fill="#c8c8c8"/><path d="${d}" fill="none" stroke="#111" stroke-width="3"/>`;
+  return `<path d="${d}" fill="none" stroke="#111" stroke-width="4" stroke-linecap="square" stroke-linejoin="miter"/>`;
 }
 
 function cardHtml(item, selected, compact) {
@@ -71,7 +71,7 @@ function renderDevice() {
   const items = fb.inbox;
   const waits = pendingItems(items);
   const tok = speed.phase === "idle" ? "0" : Number(speed.outputTokS).toFixed(1);
-  const homeStatus = `${tok} tok/s · ${waits.length ? `${waits.length} 条待处理` : "一切安静"}`;
+  const homeStatus = `<div>${tok} tok/s</div><div>${waits.length ? `${waits.length} 条待处理` : "一切安静"}</div>`;
   const cells = APPS.map((app, i) => {
     const sel = i === model.device.homeSel ? " sel" : "";
     const reserved = app.reserved ? " reserved" : "";
@@ -79,7 +79,7 @@ function renderDevice() {
     const st = app.id === "workbench" ? homeStatus : (app.reserved ? "尚未开放" : "");
     return `<button type="button" class="cell${sel}${reserved}" data-cell="${i}">
       <div><div class="kicker">${app.kicker}</div><div class="name">${app.name}${badge}</div></div>
-      ${st ? `<div class="cell-status">${esc(st)}</div>` : "<div></div>"}
+      ${st ? `<div class="cell-status">${st}</div>` : "<div></div>"}
     </button>`;
   }).join("");
   const preview = waits.slice(0, 2);
@@ -94,7 +94,10 @@ function renderDevice() {
   };
   const foot = feet[view] || ["", "BOOT 返回"];
   const curve = speed.history.length ? speed.history : [0];
+  const refreshName = model.lastRefresh === "full" ? "完整刷新" : model.lastRefresh === "partial" ? "局部刷新" : "尚未刷新";
   document.getElementById("deviceCol").innerHTML = `
+    <div class="panel-stack">
+    <div class="refresh-flag" data-refresh="${esc(model.lastRefresh)}">${refreshName}</div>
     <div class="panel" id="panel">
       <header class="topbar"><div class="brand">${esc(viewTitle(view))}</div><div class="clock num">${esc(model.clock)}</div></header>
       <section class="view ${view === "home" ? "on" : ""}" id="view-home"><div class="desk">${cells}</div></section>
@@ -149,6 +152,7 @@ function renderDevice() {
         </div>
       </section>
       <footer class="foot"><span>${foot[0]}</span><span>${foot[1]}</span></footer>
+    </div>
     </div>
     <div class="hw">
       <div class="cap">滚轮</div>
@@ -267,11 +271,11 @@ function paneEink() {
     <p class="footer-note">需要你批准，或一轮结束，会马上推过去，不等上面的间隔。</p>
     <div class="caption">墨水屏刷新</div>
     <div class="group">
-      <div class="grow"><div>有新内容时局部刷新<span class="help">关掉之后，每次有新画面都做完整刷新。</span></div>${switchHtml(model.settings.partialOnChange, "partial")}</div>
+      <div class="grow"><div>有新内容时局部刷新<span class="help">同一页上的数字和卡片可以局部刷新。换页始终完整刷新。关掉之后，同一页的新画面也做完整刷新。</span></div>${switchHtml(model.settings.partialOnChange, "partial")}</div>
       <div class="grow"><span>完整刷新</span>${select("fullEveryN", model.settings.fullEveryN, FULL_EVERY_N_CHOICES, (n) => `每 ${n} 次局部刷新`)}</div>
       <div class="grow"><span>或每隔</span>${select("fullEveryMin", model.settings.fullEveryMin, FULL_EVERY_MIN_CHOICES, (n) => `${n} 分钟`)}</div>
     </div>
-    <p class="footer-note">局部刷新更快、更省电，灰阶容易留下残影。完整刷新更干净，也更费电。默认按均衡来，照顾 1200 mAh 的电池。</p>
+    <p class="footer-note">换页做完整刷新，屏幕会闪一下，用来清掉上一页的黑。同一页上的局部刷新更快、更省电，灰阶容易留下残影。默认按均衡来，照顾 1200 mAh 的电池。</p>
     <div class="actions">
       <button class="btn" type="button" data-act="scan-wifi">扫描 Wi-Fi 设备</button>
       <button class="btn" type="button" data-act="scan-ble">扫描蓝牙设备</button>
@@ -463,7 +467,7 @@ document.body.addEventListener("click", (event) => {
   if (cell && event.target.closest(".panel")) {
     const index = Number(cell.dataset.cell);
     if (model.device.homeSel === index) deviceInput(model, "press");
-    else model.device.homeSel = index;
+    else selectHome(model, index);
     render();
     return;
   }
@@ -517,7 +521,7 @@ document.body.addEventListener("click", (event) => {
   if (name === "wheel-up" || name === "wheel-down" || name === "press" || name === "boot") deviceInput(model, name);
   if (name === "press-speed") {
     if (model.device.view === "overview" && model.device.ovSel === 0) deviceInput(model, "press");
-    else if (model.device.view === "overview") model.device.ovSel = 0;
+    else if (model.device.view === "overview") selectOverview(model, 0);
   }
   if (name === "toggle-pop") model.popoverOpen = !model.popoverOpen;
   if (name === "connect-speed" || name === "test-speed") connectSpeed(model);

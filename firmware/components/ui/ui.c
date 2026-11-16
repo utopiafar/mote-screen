@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Strikes are 1-bit and already the size on the glass. scale-up is not used. */
+
 static void set_px(uint8_t *fb, int x, int y, int level) {
     if ((unsigned)x >= MOTE_UI_W || (unsigned)y >= MOTE_UI_H) return;
     int i = y * MOTE_UI_W + x;
@@ -27,12 +29,42 @@ static void rect(uint8_t *fb, int x, int y, int w, int h, int level, int fill) {
     }
 }
 
-static const mote_glyph_t *find_glyph(uint32_t cp) {
-    int lo = 0, hi = MOTE_FONT_COUNT - 1;
+static void strike_of(int strike, const mote_glyph_t **glyphs, int *count, const uint8_t **bits) {
+    switch (strike) {
+    case MOTE_STRIKE_BODY:
+        *glyphs = mote_font_body;
+        *count = MOTE_FONT_BODY_COUNT;
+        *bits = mote_font_bits_body;
+        break;
+    case MOTE_STRIKE_TITLE:
+        *glyphs = mote_font_title;
+        *count = MOTE_FONT_TITLE_COUNT;
+        *bits = mote_font_bits_title;
+        break;
+    case MOTE_STRIKE_DISPLAY:
+        *glyphs = mote_font_display;
+        *count = MOTE_FONT_DISPLAY_COUNT;
+        *bits = mote_font_bits_display;
+        break;
+    default:
+        *glyphs = mote_font_caption;
+        *count = MOTE_FONT_CAPTION_COUNT;
+        *bits = mote_font_bits_caption;
+        break;
+    }
+}
+
+static const mote_glyph_t *find_glyph(int strike, uint32_t cp) {
+    const mote_glyph_t *glyphs;
+    const uint8_t *bits;
+    int count;
+    strike_of(strike, &glyphs, &count, &bits);
+    (void)bits;
+    int lo = 0, hi = count - 1;
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
-        if (mote_font[mid].cp == cp) return &mote_font[mid];
-        if (mote_font[mid].cp < cp) lo = mid + 1;
+        if (glyphs[mid].cp == cp) return &glyphs[mid];
+        if (glyphs[mid].cp < cp) lo = mid + 1;
         else hi = mid - 1;
     }
     return NULL;
@@ -51,37 +83,45 @@ static uint32_t next_cp(const char **text) {
     return cp;
 }
 
-static int text_width(const char *text, int scale) {
+static int text_width(const char *text, int strike) {
     int w = 0;
     const char *p = text;
     uint32_t cp;
     while ((cp = next_cp(&p))) {
-        const mote_glyph_t *g = find_glyph(cp);
-        w += (g ? g->adv : 8) * scale;
+        const mote_glyph_t *g = find_glyph(strike, cp);
+        w += g ? g->adv : 16;
     }
     return w;
 }
 
-static void text(uint8_t *fb, int x, int y, const char *utf8, int scale, int level) {
+/* limit > 0 stops before a glyph would start past that x. Ink is black or white, never gray. */
+static void text(uint8_t *fb, int x, int y, const char *utf8, int strike, int level, int limit) {
+    const mote_glyph_t *glyphs;
+    const uint8_t *bits;
+    int count;
+    strike_of(strike, &glyphs, &count, &bits);
+    (void)glyphs;
     const char *p = utf8;
     uint32_t cp;
     while ((cp = next_cp(&p))) {
-        const mote_glyph_t *g = find_glyph(cp);
-        int adv = g ? g->adv : 8;
-        if (g) {
+        const mote_glyph_t *g = find_glyph(strike, cp);
+        int adv = g ? g->adv : 16;
+        if (limit && x + adv > limit) break;
+        if (g && g->w && g->h) {
             for (int yy = 0; yy < g->h; yy++) {
                 for (int xx = 0; xx < g->w; xx++) {
                     int bit = yy * g->w + xx;
-                    if (mote_font_bits[g->offset + bit / 8] & (0x80 >> (bit % 8))) {
-                        for (int sy = 0; sy < scale; sy++) {
-                            for (int sx = 0; sx < scale; sx++) set_px(fb, x + xx * scale + sx, y + yy * scale + sy, level);
-                        }
-                    }
+                    if (bits[g->offset + bit / 8] & (0x80 >> (bit % 8))) set_px(fb, x + xx, y + yy, level);
                 }
             }
         }
-        x += adv * scale;
+        x += adv;
     }
+}
+
+static void text_right(uint8_t *fb, int right, int y, const char *utf8, int strike, int level) {
+    int w = text_width(utf8, strike);
+    text(fb, right - w, y, utf8, strike, level, right + 1);
 }
 
 static int pending_of(const mote_card_view_t *cards, int count) {
@@ -96,16 +136,17 @@ static void spark(uint8_t *fb, int x, int y, int w, int h, const float *pts, int
     float max = 1;
     for (int i = 0; i < n; i++) if (pts[i] > max) max = pts[i];
     for (int i = 1; i < n; i++) {
-        int x0 = x + (i - 1) * (w - 4) / (n - 1) + 2;
-        int x1 = x + i * (w - 4) / (n - 1) + 2;
-        int y0 = y + h - 2 - (int)(pts[i - 1] / max * (h - 6));
-        int y1 = y + h - 2 - (int)(pts[i] / max * (h - 6));
+        int x0 = x + (i - 1) * (w - 8) / (n - 1) + 4;
+        int x1 = x + i * (w - 8) / (n - 1) + 4;
+        int y0 = y + h - 4 - (int)(pts[i - 1] / max * (h - 10));
+        int y1 = y + h - 4 - (int)(pts[i] / max * (h - 10));
         int steps = abs(x1 - x0) + abs(y1 - y0) + 1;
         for (int s = 0; s <= steps; s++) {
             int xx = x0 + (x1 - x0) * s / steps;
             int yy = y0 + (y1 - y0) * s / steps;
             set_px(fb, xx, yy, 0);
-            set_px(fb, xx, yy + 1, 2);
+            set_px(fb, xx, yy + 1, 0);
+            set_px(fb, xx + 1, yy, 0);
         }
     }
 }
@@ -113,107 +154,115 @@ static void spark(uint8_t *fb, int x, int y, int w, int h, const float *pts, int
 static void render_home(uint8_t *fb, const mote_nav_t *nav, const mote_speed_view_t *speed, int pending) {
     const char *names[] = {"工作台", "时钟", "设置", "预留"};
     const char *kick[] = {"APP", "APP", "APP", "空"};
-    char status[64];
-    const char *phase = strcmp(speed->phase, "idle") == 0 ? "空闲" : strcmp(speed->phase, "tools") == 0 ? "调用工具" : "生成中";
-    (void)phase;
     float tok = strcmp(speed->phase, "idle") == 0 ? 0 : speed->tok;
-    if (pending) snprintf(status, sizeof status, "%.1f tok/s · %d 条待处理", tok, pending);
-    else snprintf(status, sizeof status, "%.1f tok/s · 一切安静", tok);
+    char line1[32];
+    char line2[32];
+    snprintf(line1, sizeof line1, "%.1f tok/s", tok);
+    if (pending) snprintf(line2, sizeof line2, "%d 条待处理", pending);
+    else snprintf(line2, sizeof line2, "一切安静");
+    int gap = 12;
+    int x0 = 16;
+    int y0 = 68;
+    int cell_w = (MOTE_UI_W - x0 * 2 - gap) / 2;
+    int cell_h = (732 - y0 - gap) / 2;
     for (int i = 0; i < 4; i++) {
         int col = i % 2, row = i / 2;
-        int x = 18 + col * 228, y = 48 + row * 350;
+        int x = x0 + col * (cell_w + gap);
+        int y = y0 + row * (cell_h + gap);
         int sel = nav->home_sel == i;
-        rect(fb, x, y, 216, 330, 0, sel);
+        rect(fb, x, y, cell_w, cell_h, 0, sel);
         int ink = sel ? 3 : 0;
-        text(fb, x + 14, y + 16, kick[i], 1, ink);
-        char title[32];
-        snprintf(title, sizeof title, "%s", names[i]);
-        text(fb, x + 14, y + 48, title, 2, ink);
+        text(fb, x + 16, y + 16, kick[i], MOTE_STRIKE_CAPTION, ink, x + cell_w - 8);
+        text(fb, x + 16, y + 52, names[i], MOTE_STRIKE_TITLE, ink, x + cell_w - 8);
         if (i == 0 && pending) {
             char badge[8];
             snprintf(badge, sizeof badge, "%d", pending);
-            text(fb, x + 150, y + 52, badge, 2, ink);
+            text_right(fb, x + cell_w - 16, y + 18, badge, MOTE_STRIKE_BODY, ink);
         }
-        if (i == 0) text(fb, x + 14, y + 250, status, 1, ink);
-        if (i == 3) text(fb, x + 14, y + 250, "尚未开放", 1, ink);
+        if (i == 0) {
+            text(fb, x + 16, y + cell_h - 78, line1, MOTE_STRIKE_CAPTION, ink, x + cell_w - 8);
+            text(fb, x + 16, y + cell_h - 42, line2, MOTE_STRIKE_CAPTION, ink, x + cell_w - 8);
+        }
+        if (i == 3) text(fb, x + 16, y + cell_h - 42, "尚未开放", MOTE_STRIKE_CAPTION, ink, x + cell_w - 8);
     }
 }
 
 static void card(uint8_t *fb, int x, int y, int w, const mote_card_view_t *item, int sel, int compact) {
+    int h = compact ? 124 : 168;
     int urgent = strcmp(item->kind, "permission") == 0;
-    rect(fb, x, y, w, compact ? 78 : 108, 0, urgent);
-    if (sel) rect(fb, x - 3, y - 3, w + 6, (compact ? 78 : 108) + 6, 0, 0);
+    rect(fb, x, y, w, h, 0, urgent);
+    if (sel) rect(fb, x - 4, y - 4, w + 8, h + 8, 0, 0);
     int ink = urgent ? 3 : 0;
-    text(fb, x + 10, y + 8, urgent ? "等待批准" : "已结束", 1, ink);
-    text(fb, x + 10, y + 30, item->title, 1, ink);
+    text(fb, x + 14, y + 12, urgent ? "等待批准" : "已结束", MOTE_STRIKE_CAPTION, ink, x + w - 12);
+    text(fb, x + 14, y + 44, item->title, MOTE_STRIKE_BODY, ink, x + w - 12);
     char meta[64];
     snprintf(meta, sizeof meta, "codex · %s", item->project);
-    text(fb, x + 10, y + 52, meta, 1, urgent ? 2 : 1);
-    if (!compact) text(fb, x + 10, y + 76, item->wait, 1, urgent ? 2 : 1);
+    text(fb, x + 14, y + 88, meta, MOTE_STRIKE_CAPTION, ink, x + w - 12);
+    if (!compact) text(fb, x + 14, y + 124, item->wait, MOTE_STRIKE_CAPTION, ink, x + w - 12);
 }
 
 static void render_overview(uint8_t *fb, const mote_nav_t *nav, const mote_speed_view_t *speed, const mote_card_view_t *cards, int count) {
     int sel_speed = nav->ov_sel == 0;
-    if (sel_speed) rect(fb, 8, 48, 464, 300, 0, 0);
-    text(fb, 22, 56, "速度", 1, 1);
-    text(fb, 300, 56, "按下查看详情", 1, 0);
+    if (sel_speed) rect(fb, 10, 64, 460, 300, 0, 0);
+    text(fb, 22, 72, "速度", MOTE_STRIKE_CAPTION, 0, 240);
+    text_right(fb, 458, 72, "按下查看详情", MOTE_STRIKE_CAPTION, 0);
     char tok[24];
     float value = strcmp(speed->phase, "idle") == 0 ? 0 : speed->tok;
     snprintf(tok, sizeof tok, "%.1f", value);
-    text(fb, 22, 88, tok, 4, 0);
-    text(fb, 22 + text_width(tok, 4) + 8, 140, "tok/s", 1, 1);
+    text(fb, 22, 108, tok, MOTE_STRIKE_DISPLAY, 0, 470);
+    text(fb, 22 + text_width(tok, MOTE_STRIKE_DISPLAY) + 12, 150, "tok/s", MOTE_STRIKE_CAPTION, 0, 470);
     char phase[64];
     const char *name = strcmp(speed->phase, "tools") == 0 ? "调用工具" : strcmp(speed->phase, "idle") == 0 ? "空闲" : "生成中";
     snprintf(phase, sizeof phase, "%s · %d 个会话在跑", name, speed->active);
-    text(fb, 22, 190, phase, 1, 0);
-    spark(fb, 22, 230, 436, 80, speed->history, speed->history_len);
-    rect(fb, 0, 328, 480, 2, 0, 1);
+    text(fb, 22, 210, phase, MOTE_STRIKE_BODY, 0, 470);
+    spark(fb, 22, 258, 436, 90, speed->history, speed->history_len);
+    rect(fb, 16, 364, 448, 3, 0, 1);
     int pending = 0;
     for (int i = 0; i < count; i++) if (strcmp(cards[i].kind, "permission") == 0) pending++;
-    text(fb, 22, 340, "CODEX 待处理", 1, 1);
-    if (pending) text(fb, 300, 340, "按下查看全部", 1, 0);
+    text(fb, 22, 380, "CODEX 待处理", MOTE_STRIKE_CAPTION, 0, 280);
+    if (pending) text_right(fb, 458, 380, "按下查看全部", MOTE_STRIKE_CAPTION, 0);
     int shown = 0;
     for (int i = 0; i < count && shown < 2; i++) {
         if (strcmp(cards[i].kind, "permission") != 0) continue;
-        card(fb, 22, 372 + shown * 92, 436, &cards[i], nav->ov_sel == shown + 1, 1);
+        card(fb, 22, 418 + shown * 140, 436, &cards[i], nav->ov_sel == shown + 1, 1);
         shown++;
     }
     if (!shown) {
-        text(fb, 22, 420, "一切安静", 2, 0);
-        text(fb, 22, 470, "没有等待批准的 Codex 对话。", 1, 1);
+        text(fb, 22, 460, "一切安静", MOTE_STRIKE_TITLE, 0, 470);
+        text(fb, 22, 530, "没有等待批准的 Codex 对话。", MOTE_STRIKE_CAPTION, 0, 470);
     }
 }
 
 static void render_speed(uint8_t *fb, const mote_speed_view_t *speed) {
-    text(fb, 22, 48, "AGENT SPEED · 本机输出", 1, 1);
+    text(fb, 22, 68, "AGENT SPEED · 本机输出", MOTE_STRIKE_CAPTION, 0, 470);
     char tok[24];
     float value = strcmp(speed->phase, "idle") == 0 ? 0 : speed->tok;
     snprintf(tok, sizeof tok, "%.1f", value);
-    text(fb, 22, 80, tok, 4, 0);
-    text(fb, 22 + text_width(tok, 4) + 8, 132, "tok/s", 1, 1);
+    text(fb, 22, 104, tok, MOTE_STRIKE_DISPLAY, 0, 470);
+    text(fb, 22 + text_width(tok, MOTE_STRIKE_DISPLAY) + 12, 150, "tok/s", MOTE_STRIKE_CAPTION, 0, 470);
     const char *name = strcmp(speed->phase, "tools") == 0 ? "调用工具" : strcmp(speed->phase, "idle") == 0 ? "空闲" : "生成中";
-    text(fb, 22, 176, name, 2, 0);
+    text(fb, 22, 210, name, MOTE_STRIKE_TITLE, 0, 470);
     const char *labels[] = {"进行中", "正在生成", "调用工具"};
     int values[] = {speed->active, speed->generating, speed->tools};
     for (int i = 0; i < 3; i++) {
-        int x = 22 + i * 150;
-        rect(fb, x, 230, 140, 80, 0, 0);
+        int x = 22 + i * 152;
+        rect(fb, x, 276, 140, 108, 0, 0);
         char num[8];
         snprintf(num, sizeof num, "%d", values[i]);
-        text(fb, x + 16, 242, num, 2, 0);
-        text(fb, x + 16, 280, labels[i], 1, 1);
+        text(fb, x + 16, 288, num, MOTE_STRIKE_TITLE, 0, x + 128);
+        text(fb, x + 12, 348, labels[i], MOTE_STRIKE_CAPTION, 0, x + 132);
     }
-    text(fb, 22, 330, "近一分钟", 1, 1);
-    spark(fb, 22, 356, 436, 88, speed->history, speed->history_len);
-    int y = 470;
+    text(fb, 22, 404, "近一分钟", MOTE_STRIKE_CAPTION, 0, 470);
+    spark(fb, 22, 436, 436, 96, speed->history, speed->history_len);
+    int y = 552;
     for (int i = 0; i < speed->source_count && i < 4; i++) {
         char row[48];
         float tok_s = strcmp(speed->phase, "idle") == 0 ? 0 : speed->source_tok[i];
         snprintf(row, sizeof row, "%s", speed->source_name[i]);
-        text(fb, 22, y, row, 1, 0);
+        text(fb, 22, y, row, MOTE_STRIKE_BODY, 0, 280);
         snprintf(row, sizeof row, "%.1f tok/s", tok_s);
-        text(fb, 280, y, row, 1, 0);
-        y += 36;
+        text_right(fb, 458, y, row, MOTE_STRIKE_BODY, 0);
+        y += 46;
     }
 }
 
@@ -221,33 +270,35 @@ static void render_inbox(uint8_t *fb, const mote_nav_t *nav, const mote_card_vie
     char head[32];
     if (pending) snprintf(head, sizeof head, "%d 条在等批准", pending);
     else snprintf(head, sizeof head, "暂无等待");
-    text(fb, 22, 48, head, 1, 1);
+    text(fb, 22, 68, head, MOTE_STRIKE_BODY, 0, 470);
     if (!count) {
-        text(fb, 22, 200, "一切安静", 2, 0);
-        text(fb, 22, 250, "没有等待批准或刚结束的 Codex 对话。", 1, 1);
+        text(fb, 22, 240, "一切安静", MOTE_STRIKE_TITLE, 0, 470);
+        text(fb, 22, 310, "没有等待批准或刚结束的 Codex 对话。", MOTE_STRIKE_CAPTION, 0, 470);
         return;
     }
-    int y = 70;
+    int y = 124;
     for (int i = 0; i < count && y < 700; i++) {
         card(fb, 22, y, 436, &cards[i], nav->inbox_sel == i, 0);
-        y += 120;
+        y += 184;
     }
 }
 
 static void render_settings(uint8_t *fb, const mote_status_view_t *status) {
     const char *keys[] = {"墨水屏", "Agent Speed", "Codex hook", "连接方式", "刷新"};
     const char *vals[] = {status->eink, status->speed, status->hook, status->link, status->refresh};
-    int y = 52;
+    int y = 80;
     for (int i = 0; i < 5; i++) {
-        text(fb, 22, y, keys[i], 1, 0);
-        text(fb, 250, y, vals[i], 1, 1);
-        y += 48;
-        rect(fb, 22, y - 10, 436, 1, 2, 1);
+        text(fb, 22, y, keys[i], MOTE_STRIKE_BODY, 0, 250);
+        text_right(fb, 458, y, vals[i], MOTE_STRIKE_BODY, 0);
+        rect(fb, 22, y + 46, 436, 2, 0, 1);
+        y += 72;
     }
 }
 
 static void render_clock(uint8_t *fb, const mote_status_view_t *status) {
-    text(fb, 40, 280, status->clock[0] ? status->clock : "11:57", 4, 0);
+    const char *clock = status->clock[0] ? status->clock : "11:57";
+    int w = text_width(clock, MOTE_STRIKE_DISPLAY);
+    text(fb, (MOTE_UI_W - w) / 2, 340, clock, MOTE_STRIKE_DISPLAY, 0, MOTE_UI_W - 8);
 }
 
 void mote_ui_render(uint8_t *fb, const mote_nav_t *nav, const mote_speed_view_t *speed,
@@ -292,11 +343,10 @@ void mote_ui_render(uint8_t *fb, const mote_nav_t *nav, const mote_speed_view_t 
         render_home(fb, nav, speed, pending);
         break;
     }
-    rect(fb, 0, 0, 480, 36, 0, 0);
-    text(fb, 16, 8, title, 1, 3);
-    text(fb, 390, 8, status->clock, 1, 3);
-    rect(fb, 0, 760, 480, 40, 0, 0);
-    text(fb, 12, 770, left, 1, 3);
-    int rw = text_width(right, 1);
-    text(fb, 468 - rw, 770, right, 1, 3);
+    rect(fb, 0, 56, 480, 3, 0, 1);
+    text(fb, 16, 14, title, MOTE_STRIKE_CAPTION, 0, 360);
+    text_right(fb, 464, 14, status->clock, MOTE_STRIKE_CAPTION, 0);
+    rect(fb, 0, 742, 480, 3, 0, 1);
+    text(fb, 12, 758, left, MOTE_STRIKE_CAPTION, 0, 0);
+    text_right(fb, 468, 758, right, MOTE_STRIKE_CAPTION, 0);
 }

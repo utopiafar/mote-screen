@@ -38,12 +38,14 @@ static void push_cases(void) {
 }
 
 static void refresh_cases(void) {
-    expect_int("partial", mote_decide_refresh(true, 10, 10, true, 0, 0), MOTE_REFRESH_PARTIAL);
-    expect_int("still", mote_decide_refresh(true, 10, 10, true, 9, 0), MOTE_REFRESH_PARTIAL);
-    expect_int("count", mote_decide_refresh(true, 10, 10, true, 10, 0), MOTE_REFRESH_FULL);
-    expect_int("quiet", mote_decide_refresh(true, 10, 10, false, 0, 599999), MOTE_REFRESH_NONE);
-    expect_int("time", mote_decide_refresh(true, 10, 10, false, 0, 600000), MOTE_REFRESH_FULL);
-    expect_int("off", mote_decide_refresh(false, 10, 10, true, 0, 0), MOTE_REFRESH_FULL);
+    expect_int("partial", mote_decide_refresh(true, 10, 10, true, 0, 0, false), MOTE_REFRESH_PARTIAL);
+    expect_int("still", mote_decide_refresh(true, 10, 10, true, 9, 0, false), MOTE_REFRESH_PARTIAL);
+    expect_int("count", mote_decide_refresh(true, 10, 10, true, 10, 0, false), MOTE_REFRESH_FULL);
+    expect_int("quiet", mote_decide_refresh(true, 10, 10, false, 0, 599999, false), MOTE_REFRESH_NONE);
+    expect_int("time", mote_decide_refresh(true, 10, 10, false, 0, 600000, false), MOTE_REFRESH_FULL);
+    expect_int("off", mote_decide_refresh(false, 10, 10, true, 0, 0, false), MOTE_REFRESH_FULL);
+    expect_int("page", mote_decide_refresh(true, 10, 10, true, 0, 0, true), MOTE_REFRESH_FULL);
+    expect_int("page-quiet", mote_decide_refresh(true, 10, 10, false, 0, 0, true), MOTE_REFRESH_FULL);
 }
 
 static void pipe_cases(void) {

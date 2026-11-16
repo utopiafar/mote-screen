@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createModel, menuLabel, hookLabel, connectSpeed, installHook, finishSetup, scanWifi,
-  breakHook, inject, advance, removeHook, foreignHookSurvived, patchSettings, chooseUsb,
-  setUsbPlugged, popoverRows,
+  breakHook, inject,   advance, removeHook, foreignHookSurvived, patchSettings, chooseUsb,
+  setUsbPlugged, popoverRows, deviceInput,
 } from "../simulator/model.mjs";
 import { activeTransport } from "../core/settings.mjs";
 
@@ -54,6 +54,23 @@ test("待处理立刻推送，速度要等间隔，十分钟后完整刷新", ()
   advance(model, 1_000);
   assert.match(model.lastFrameText, /"type":"speed"/);
   advance(model, 600_000);
+  assert.equal(model.lastRefresh, "full");
+});
+
+test("换页走完整刷新，同一页上的新卡片仍可局部刷新", () => {
+  const model = createModel();
+  connectSpeed(model);
+  installHook(model);
+  finishSetup(model);
+  scanWifi(model);
+  deviceInput(model, "press");
+  assert.equal(model.device.view, "overview");
+  assert.equal(model.lastRefresh, "full");
+  inject(model, "permission");
+  assert.equal(model.device.view, "overview");
+  assert.equal(model.lastRefresh, "partial");
+  deviceInput(model, "boot");
+  assert.equal(model.device.view, "home");
   assert.equal(model.lastRefresh, "full");
 });
 

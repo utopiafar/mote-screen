@@ -163,12 +163,15 @@ static void apply_line(const char *line) {
 
 static void present(int force) {
     clock_now();
+    static int shown;
+    static mote_view_t shown_view;
+    int view_changed = shown && nav.view != shown_view;
     char key[160];
     snprintf(key, sizeof key, "%d.%d.%d.%d|%s|%.1f|%d|%s|%s",
              (int)nav.view, nav.home_sel, nav.ov_sel, nav.inbox_sel,
              speed.phase, speed.tok, card_count, status_view.clock, status_view.refresh);
     int changed = strcmp(key, picture) != 0 || content_seq != last_seq;
-    mote_refresh_t kind = mote_decide_refresh(partial_on_change, full_every_n, full_every_min, changed || force, partials, ms_since_full);
+    mote_refresh_t kind = mote_decide_refresh(partial_on_change, full_every_n, full_every_min, changed || force, partials, ms_since_full, view_changed);
     if (kind == MOTE_REFRESH_NONE && !force) return;
     int full = force || kind == MOTE_REFRESH_FULL;
     static uint8_t *fb;
@@ -187,6 +190,8 @@ static void present(int force) {
     }
     snprintf(picture, sizeof picture, "%s", key);
     last_seq = content_seq;
+    shown = 1;
+    shown_view = nav.view;
     ESP_LOGI(TAG, "refresh %s", full ? "full" : "partial");
 }
 

@@ -242,6 +242,8 @@ void epd_init(void) {
 }
 
 void epd_present(const uint8_t *portrait, int full) {
+    /* BUSY stays high while the panel is updating. Do not reset or send the next frame until it drops. */
+    wait_idle();
     if (full) {
         if (!gray_ready) enter_gray();
         uint8_t *image = heap_caps_malloc(EPD_NATIVE_W * EPD_NATIVE_H / 4, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

@@ -40,7 +40,9 @@ typedef enum {
 
 const char *mote_menu_status(bool setup, bool speed, bool eink, const char *hook);
 int mote_ms_until_push(int push_generating_sec, int push_idle_sec, const char *phase, bool inbox_dirty, int last_push_ms, int now_ms);
-mote_refresh_t mote_decide_refresh(bool partial_on_change, int full_every_n, int full_every_min, bool content_changed, int partials_since_full, int ms_since_full);
+/* view_changed is a page turn (home, workbench, detail). That is always a full refresh.
+ * partial_on_change only applies to later updates on the same page. */
+mote_refresh_t mote_decide_refresh(bool partial_on_change, int full_every_n, int full_every_min, bool content_changed, int partials_since_full, int ms_since_full, bool view_changed);
 mote_pipe_t mote_active_transport(bool bluetooth, bool usb_fallback, bool usb_plugged);
 
 void mote_nav_init(mote_nav_t *nav);

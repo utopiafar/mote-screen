@@ -18,7 +18,8 @@ int mote_ms_until_push(int push_generating_sec, int push_idle_sec, const char *p
     return wait > 0 ? wait : 0;
 }
 
-mote_refresh_t mote_decide_refresh(bool partial_on_change, int full_every_n, int full_every_min, bool content_changed, int partials_since_full, int ms_since_full) {
+mote_refresh_t mote_decide_refresh(bool partial_on_change, int full_every_n, int full_every_min, bool content_changed, int partials_since_full, int ms_since_full, bool view_changed) {
+    if (view_changed) return MOTE_REFRESH_FULL;
     bool time_due = full_every_min > 0 && ms_since_full >= full_every_min * 60 * 1000;
     bool count_due = partials_since_full >= full_every_n;
     if (!content_changed && !time_due) return MOTE_REFRESH_NONE;
