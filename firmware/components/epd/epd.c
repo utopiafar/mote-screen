@@ -18,13 +18,17 @@
  * board driver (custom_lcd_display.cc). No 4-gray init (0x1A=0x5A) and
  * no 4-gray turn-on (0x22=0xD7).
  *
- * EPD_Init once at boot. Display_Base writes the same frame to 0x24 and
- * 0x26, then 0x22=0xF7. That is the baseline, used for the first paint
- * and the occasional cleanup. EPD_Init_Partial (reset, 0x18=0x80,
- * border 0x3C=0x80, full-frame window) runs when a partial series
- * starts, not on every frame. Display_Partial writes 0x24 only and
- * turns on with 0x22=0xFF, with no reset, so 0x26 stays the previous
- * image and only changed pixels move.
+ * Display_Base writes the same frame to 0x24 and 0x26, then 0x22=0xF7.
+ * That is the boot paint and an opted-in cleanup. It is not followed by
+ * EPD_Init_Partial: that reset returns registers to POR and drops the
+ * previous frame just stored in 0x26.
+ *
+ * Display_Partial's turn-on is 0x22=0xFF with no panel reset. Its prefix
+ * (0x18=0x80, border 0x3C=0x80) is sent without that reset. The window is
+ * EPD_Init's full-frame window: X is a pixel address here, not the byte
+ * index Display_Partial multiplies by 8. After 0xFF returns, the same
+ * frame is written to 0x26 and nothing is turned on again, so the next
+ * page differs against the image actually on the glass.
  */
 
 static const char *TAG = "epd";
@@ -127,18 +131,12 @@ static void hw_init(void) {
     in_partial = 0;
 }
 
-/* xiaozhi EPD_Init_Partial: reset once for the series, temperature
- * sensor 0x18=0x80, border 0x3C=0x80 (not the full-refresh 0x01). */
-static void init_partial(void) {
-    reset_panel();
-    wait_idle();
+/* Display_Partial's temperature and border bytes, without its reset. */
+static void partial_prefix(void) {
     cmd(0x18);
     dat(0x80);
     cmd(0x3C);
     dat(0x80);
-    set_full_window();
-    wait_idle();
-    in_partial = 1;
 }
 
 static void turn_on(uint8_t sequence) {
@@ -212,22 +210,36 @@ void epd_present(const uint8_t *portrait, int full) {
     if (!image) image = malloc(n);
     if (!image) return;
     pack_mono(portrait, image);
-    if (full) {
-        /* Back from a partial series, EPD_Init again so 0xF7 runs from the full-refresh border. */
-        if (in_partial) hw_init();
-        cmd(0x24);
-        dat_buf(image, n);
-        cmd(0x26);
-        dat_buf(image, n);
-        turn_on(MOTE_TURN_BASE);
-        init_partial();
-    } else {
-        if (!in_partial) init_partial();
-        set_full_window();
-        cmd(0x24);
-        dat_buf(image, n);
-        turn_on(MOTE_TURN_PART);
+    mote_present_step_t steps[8];
+    int count = mote_present_steps(full, in_partial, steps, 8);
+    for (int i = 0; i < count; i++) {
+        switch (steps[i]) {
+        case MOTE_PRESENT_FULL_INIT:
+            hw_init();
+            break;
+        case MOTE_PRESENT_PARTIAL_PREFIX:
+            partial_prefix();
+            break;
+        case MOTE_PRESENT_WINDOW:
+            set_full_window();
+            break;
+        case MOTE_PRESENT_RAM_NEW:
+            cmd(0x24);
+            dat_buf(image, n);
+            break;
+        case MOTE_PRESENT_RAM_OLD:
+            cmd(0x26);
+            dat_buf(image, n);
+            break;
+        case MOTE_PRESENT_TURN_BASE:
+            turn_on(MOTE_TURN_BASE);
+            break;
+        case MOTE_PRESENT_TURN_PART:
+            turn_on(MOTE_TURN_PART);
+            break;
+        }
     }
+    in_partial = !full;
     free(image);
 }
 

@@ -64,6 +64,50 @@ static void refresh_cases(void) {
     expect_int("default-not-base", mote_use_base(0, mote_decide_refresh(true, 0, 0, true, 10, 600000, false)), 0);
 }
 
+static void expect_steps(const char *name, int full, int in_partial, const mote_present_step_t *want, int nwant) {
+    mote_present_step_t got[8];
+    int n = mote_present_steps(full, in_partial, got, 8);
+    if (n != nwant) {
+        fprintf(stderr, "%s: %d steps want %d\n", name, n, nwant);
+        fail = 1;
+        return;
+    }
+    for (int i = 0; i < n; i++) {
+        if (got[i] != want[i]) {
+            fprintf(stderr, "%s[%d]: got %d want %d\n", name, i, got[i], want[i]);
+            fail = 1;
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        if (!full && got[i] == MOTE_PRESENT_FULL_INIT) {
+            fprintf(stderr, "%s: partial path reset\n", name);
+            fail = 1;
+        }
+        if (got[i] == MOTE_PRESENT_TURN_PART && mote_turn_on_data(MOTE_REFRESH_PARTIAL) != MOTE_TURN_PART) fail = 1;
+        if (got[i] == MOTE_PRESENT_TURN_BASE && mote_turn_on_data(MOTE_REFRESH_FULL) != MOTE_TURN_BASE) fail = 1;
+    }
+}
+
+static void present_cases(void) {
+    const mote_present_step_t boot[] = {
+        MOTE_PRESENT_RAM_NEW, MOTE_PRESENT_RAM_OLD, MOTE_PRESENT_TURN_BASE,
+    };
+    const mote_present_step_t page[] = {
+        MOTE_PRESENT_PARTIAL_PREFIX, MOTE_PRESENT_WINDOW, MOTE_PRESENT_RAM_NEW,
+        MOTE_PRESENT_TURN_PART, MOTE_PRESENT_WINDOW, MOTE_PRESENT_RAM_OLD,
+    };
+    const mote_present_step_t cleanup[] = {
+        MOTE_PRESENT_FULL_INIT, MOTE_PRESENT_RAM_NEW, MOTE_PRESENT_RAM_OLD, MOTE_PRESENT_TURN_BASE,
+    };
+    expect_steps("boot-base", 1, 0, boot, 3);
+    expect_steps("page", 0, 1, page, 6);
+    expect_steps("first-partial", 0, 0, page, 6);
+    expect_steps("cleanup-base", 1, 1, cleanup, 4);
+    expect_int("turn-then-old", page[3], MOTE_PRESENT_TURN_PART);
+    expect_int("old-is-last", page[5], MOTE_PRESENT_RAM_OLD);
+    expect_int("present-cap", mote_present_steps(0, 0, NULL, 8), 0);
+}
+
 static void pipe_cases(void) {
     expect_int("wifi", mote_active_transport(false, true, false), MOTE_PIPE_WIFI);
     expect_int("usb", mote_active_transport(true, true, true), MOTE_PIPE_USB);
@@ -97,6 +141,7 @@ int main(void) {
     menu_cases();
     push_cases();
     refresh_cases();
+    present_cases();
     pipe_cases();
     nav_cases();
     if (fail) return 1;

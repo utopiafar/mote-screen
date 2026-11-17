@@ -40,6 +40,27 @@ int mote_use_base(int force, mote_refresh_t kind) {
     return force || kind == MOTE_REFRESH_FULL;
 }
 
+int mote_present_steps(int full, int in_partial, mote_present_step_t *out, int cap) {
+    mote_present_step_t steps[8];
+    int n = 0;
+    if (full) {
+        if (in_partial) steps[n++] = MOTE_PRESENT_FULL_INIT;
+        steps[n++] = MOTE_PRESENT_RAM_NEW;
+        steps[n++] = MOTE_PRESENT_RAM_OLD;
+        steps[n++] = MOTE_PRESENT_TURN_BASE;
+    } else {
+        steps[n++] = MOTE_PRESENT_PARTIAL_PREFIX;
+        steps[n++] = MOTE_PRESENT_WINDOW;
+        steps[n++] = MOTE_PRESENT_RAM_NEW;
+        steps[n++] = MOTE_PRESENT_TURN_PART;
+        steps[n++] = MOTE_PRESENT_WINDOW;
+        steps[n++] = MOTE_PRESENT_RAM_OLD;
+    }
+    if (n > cap || !out) return 0;
+    for (int i = 0; i < n; i++) out[i] = steps[i];
+    return n;
+}
+
 mote_pipe_t mote_active_transport(bool bluetooth, bool usb_fallback, bool usb_plugged) {
     if (usb_fallback && usb_plugged) return MOTE_PIPE_USB;
     return bluetooth ? MOTE_PIPE_BLUETOOTH : MOTE_PIPE_WIFI;
