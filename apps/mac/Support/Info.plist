@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>zh-Hans</string>
+  <key>CFBundleExecutable</key>
+  <string>MoteScreen</string>
+  <key>CFBundleIdentifier</key>
+  <string>far.utopia.motescreen</string>
+  <key>CFBundleName</key>
+  <string>连接状态</string>
+  <key>CFBundleDisplayName</key>
+  <string>连接状态</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>14.0</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>用来连接这块屏上的自制固件。出厂系统不走这条蓝牙。</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>用来在局域网上寻找墨水屏，并读取 Agent Speed 的速度。</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_motescreen._tcp.</string>
+    <string>_agentspeed._tcp.</string>
+  </array>
+</dict>
+</plist>

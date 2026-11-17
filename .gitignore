@@ -1,0 +1,15 @@
+.DS_Store
+node_modules/
+apps/mac/.build/
+*.app
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/managed_components/
+firmware/dependencies.lock
+**/__pycache__/
+firmware/host/test_logic
+firmware/host/test_draw
+
+# Design prototypes stay out of this repo
+reference/

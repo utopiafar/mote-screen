@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Codex PermissionRequest / Stop hook.
+
+Tells the menu-bar app that something needs a look. Stdout stays empty, so
+Codex keeps its own approval prompt and does not continue a finished turn.
+Conversation text is not forwarded.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import urllib.request
+
+HOOK_URL = os.environ.get("MOTE_SCREEN_HOOK_URL", "http://127.0.0.1:7428/hook")
+TITLE_MAX = 48
+
+
+def basename(cwd):
+    text = (cwd or "").rstrip("/")
+    if not text:
+        return "codex"
+    return text.split("/")[-1] or "codex"
+
+
+def one_line(value) -> str:
+    return " ".join(str(value or "").split())
+
+
+def clip(text: str) -> str:
+    chars = list(text)
+    if len(chars) <= TITLE_MAX:
+        return text
+    return "".join(chars[: TITLE_MAX - 1]) + "…"
+
+
+def first_path(command: str) -> str:
+    token = ""
+    for part in command.replace("\\", " ").split():
+        if "." in part and "/" in part or (part.endswith((".rs", ".py", ".js", ".ts", ".go", ".c", ".h", ".md", ".toml", ".json"))):
+            token = part
+            break
+        if "." in part and not part.startswith("-"):
+            token = part
+            break
+    return token
+
+
+def permission_title(event):
+    tool_input = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
+    description = one_line(tool_input.get("description"))
+    if description:
+        return clip(description)
+    tool = str(event.get("tool_name") or "")
+    command = one_line(tool_input.get("command"))
+    if tool in ("Bash", "shell"):
+        shown = command if len(command) <= 32 else command[:32] + "…"
+        return clip(f"允许运行 {shown or '命令'}")
+    if tool in ("apply_patch", "Edit", "Write"):
+        file_name = one_line(tool_input.get("path") or tool_input.get("file_path") or first_path(command) or "文件")
+        return clip(f"允许修改 {file_name}")
+    if tool:
+        return clip(f"允许 {tool}")
+    return "允许这次操作"
+
+
+def summarize(event):
+    name = event.get("hook_event_name") if isinstance(event, dict) else None
+    if name not in ("PermissionRequest", "Stop"):
+        return None
+    project = basename(str(event.get("cwd") or ""))
+    if name == "Stop":
+        return {
+            "id": f"stop:{event.get('session_id') or 'session'}",
+            "kind": "stop",
+            "title": "本轮已结束",
+            "project": project,
+            "source": "codex",
+        }
+    return {
+        "id": f"perm:{event.get('session_id') or 'session'}:{event.get('turn_id') or ''}",
+        "kind": "permission",
+        "title": permission_title(event),
+        "project": project,
+        "source": "codex",
+    }
+
+
+def main():
+    raw = sys.stdin.read()
+    try:
+        event = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError:
+        return 0
+    summary = summarize(event)
+    if summary is None:
+        return 0
+    data = json.dumps(summary).encode("utf-8")
+    request = urllib.request.Request(
+        HOOK_URL,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=2) as response:
+            response.read()
+    except Exception:
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

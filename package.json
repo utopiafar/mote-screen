@@ -1,0 +1,10 @@
+{
+  "name": "mote-screen",
+  "private": true,
+  "type": "module",
+  "description": "Mac 菜单栏连接状态、墨水屏固件，以及接在同一套状态机上的浏览器模拟器。",
+  "scripts": {
+    "test": "node --test",
+    "sim": "node simulator/serve.mjs"
+  }
+}
